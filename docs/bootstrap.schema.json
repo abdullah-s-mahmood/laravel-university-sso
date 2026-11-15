@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Broker bootstrap",
+  "type": "object",
+  "required": [
+    "authenticated",
+    "user",
+    "application",
+    "security"
+  ],
+  "properties": {
+    "authenticated": {
+      "const": true
+    },
+    "identity": {
+      "type": "object",
+      "required": [
+        "issuer",
+        "subject"
+      ],
+      "properties": {
+        "issuer": {
+          "type": "string",
+          "format": "uri"
+        },
+        "subject": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "user": {
+      "type": "object",
+      "required": [
+        "university_id"
+      ],
+      "properties": {
+        "university_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "application": {
+      "type": "object",
+      "required": [
+        "client_id",
+        "allowed",
+        "permissions"
+      ],
+      "properties": {
+        "client_id": {
+          "type": "string"
+        },
+        "allowed": {
+          "const": true
+        },
+        "roles": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "permissions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "security": {
+      "type": "object",
+      "required": [
+        "session_epoch",
+        "authorization_version"
+      ],
+      "properties": {
+        "session_epoch": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "authorization_version": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "active_context": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "applications": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  }
+}

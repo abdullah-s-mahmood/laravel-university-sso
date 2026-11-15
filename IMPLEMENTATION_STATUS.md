@@ -23,7 +23,9 @@ Verified locally:
   boots and denies unauthenticated access.
 - Keycloak runner shell and JavaScript syntax checked.
 
-Actual Keycloak browser acceptance is PENDING. Local harness attempt stopped
+Actual Keycloak browser acceptance is PENDING. First hosted run failed before
+provider tests (runner OS/Playwright mismatch and DTO config coupling); corrections
+are committed in abce302 and require the next hosted run. Local harness attempt stopped
 because Docker daemon socket is unavailable. Hosted CI defines a pinned Keycloak
 26.8.2 fixture, confidential clients on separate hosts, real PKCE login and
 cross-client SSO, cookie isolation, local logout isolation, invalid redirect and

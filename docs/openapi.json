@@ -1,0 +1,89 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Generic broker SDK integration",
+    "version": "0.1.0-dev"
+  },
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/api/v1/me/bootstrap": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Filtered application context",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./bootstrap.schema.json"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid access token"
+          },
+          "403": {
+            "description": "Application denied"
+          },
+          "503": {
+            "description": "Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/session/status": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Authoritative session state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "active",
+                    "university_id",
+                    "session_epoch",
+                    "authorization_version"
+                  ],
+                  "properties": {
+                    "active": {
+                      "type": "boolean"
+                    },
+                    "university_id": {
+                      "type": "string"
+                    },
+                    "session_epoch": {
+                      "type": "integer"
+                    },
+                    "authorization_version": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid access token"
+          },
+          "503": {
+            "description": "Unavailable"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    }
+  }
+}
