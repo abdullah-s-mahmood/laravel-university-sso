@@ -1,0 +1,58 @@
+name: SDK
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - laravel: '^12.0'
+            testbench: '^10.0'
+          - laravel: '^13.0'
+            testbench: '^11.0'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: openssl, mbstring, xml, curl
+          coverage: none
+      - run: composer require --dev "orchestra/testbench:${{ matrix.testbench }}" "laravel/framework:${{ matrix.laravel }}" --no-interaction --no-update
+      - run: composer update --prefer-dist --no-interaction
+      - run: composer validate --strict
+      - run: composer check
+      - run: composer audit
+      - run: composer licenses --format=json > dependency-licenses.json
+      - run: composer show --format=json > dependency-inventory.json
+      - run: cd examples/consumer && composer install --no-interaction && php smoke.php
+  keycloak:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: openssl, mbstring, xml, curl
+          coverage: none
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: composer install --prefer-dist --no-interaction
+      - run: cd tests/Integration && npm ci && npx playwright install --with-deps chromium
+      - run: tests/Integration/run.sh
+  locked:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: openssl, mbstring, xml, curl
+          coverage: none
+      - run: composer install --prefer-dist --no-interaction
+      - run: composer check
+      - run: composer audit
+      - run: cd examples/consumer && composer install --no-interaction && php smoke.php

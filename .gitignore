@@ -1,0 +1,8 @@
+/vendor/
+/.phpunit.cache/
+/.phpunit.result.cache
+/.phpstan/
+/examples/consumer/vendor/
+/examples/consumer.env
+/tests/Integration/node_modules/
+/tests/Integration/test-results/
