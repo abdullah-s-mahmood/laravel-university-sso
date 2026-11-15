@@ -8,7 +8,7 @@ final readonly class BootstrapContext implements Contracts\IdentityContext
 {
     public function __construct(public string $id, public int $epoch, public int $authorizationVersion, public array $permissions, private array $data = []) {}
 
-    public static function fromArray(array $data, string $client, ?string $issuer = null, ?string $subject = null): self
+    public static function fromArray(array $data, string $client, ?string $issuer = null, ?string $subject = null, bool $requireIdentityBinding = false): self
     {
         if (($data['authenticated'] ?? null) === false) {
             throw new AuthenticationException('Unauthenticated context.');
@@ -23,7 +23,7 @@ final readonly class BootstrapContext implements Contracts\IdentityContext
             if (! is_array($data['identity']) || ($issuer !== null && ($data['identity']['issuer'] ?? null) !== $issuer) || ($subject !== null && ($data['identity']['subject'] ?? null) !== $subject)) {
                 throw new AuthenticationException('Bootstrap identity mismatch.');
             }
-        } elseif (config('university-sso.require_identity_binding', false) && $subject !== null) {
+        } elseif ($requireIdentityBinding && $subject !== null) {
             throw new UpstreamException('Missing bootstrap identity binding.');
         }
         foreach (['permissions', 'roles'] as $key) {

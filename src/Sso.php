@@ -104,7 +104,7 @@ final class Sso implements Contracts\BrokerClient
 
     public function bootstrap(string $accessToken, ?string $issuer = null, ?string $subject = null): BootstrapContext
     {
-        return BootstrapContext::fromArray(Http::get(rtrim(Http::url($this->setting('broker_url')), '/').'/api/v1/me/bootstrap', $accessToken), $this->setting('client_id'), $issuer, $subject);
+        return BootstrapContext::fromArray(Http::get(rtrim(Http::url($this->setting('broker_url')), '/').'/api/v1/me/bootstrap', $accessToken), $this->setting('client_id'), $issuer, $subject, (bool) config('university-sso.require_identity_binding', false));
     }
 
     public function status(string $accessToken): array

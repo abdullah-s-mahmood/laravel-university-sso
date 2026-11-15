@@ -12,7 +12,9 @@ Add a Composer path repository pointing to this directory and require
 
 Configure SSO_ISSUER, SSO_CLIENT_ID, SSO_CLIENT_SECRET (confidential clients),
 SSO_REDIRECT_URI and SSO_BROKER_URL. All endpoints require HTTPS. Register an
-exact redirect URI with the provider; use RS256 signing.
+exact redirect URI with the provider; use RS256 signing. Configure scopes as
+['openid', 'broker-api'] when your broker audience requires that optional scope.
+The Composer vendor name is provisional; this is a development snapshot.
 
 Consumer routes (under Laravel's web middleware):
 
@@ -36,7 +38,9 @@ login error without logging tokens. The SDK does not create a local User or set
 Laravel Auth; map verified issuer/subject explicitly if needed, never by email.
 
 The facade is `UniversitySso\Facades\Sso`. DTO permissions use
-`$context->can('documents.read')`; resource authorization remains the application's job.
+`$context->can('documents.read')`; this is a UI snapshot hint. For sensitive decisions, use Sso::hasPermission
+with a resource-policy callback to recheck broker state. Apply
+university.session-valid before university.permission or university.role.
 
 See [integration contract](docs/INTEGRATION.md), [security](SECURITY.md),
 [Arabic guide](README.ar.md), and [status](IMPLEMENTATION_STATUS.md).
@@ -46,3 +50,6 @@ See [integration contract](docs/INTEGRATION.md), [security](SECURITY.md),
 `composer install && composer check && composer audit`.
 Independent Composer consumer: `cd examples/consumer && composer install && php smoke.php`.
 CI covers Laravel 12/Testbench 10 and Laravel 13/Testbench 11 with PHP 8.4.
+
+Real-provider harness (with fake Broker): [instructions](tests/Integration/README.md).
+Run php tools/sbom.php for a CycloneDX inventory of locked dependencies.

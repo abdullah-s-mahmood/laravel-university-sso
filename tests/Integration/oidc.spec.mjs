@@ -60,3 +60,32 @@ test('provider rejects missing PKCE for confidential web and public native clien
     }
   }
 });
+
+test('native public client exchanges authorization code with S256 verifier and no secret',async({page,request})=>{
+  const {randomBytes,createHash}=await import('node:crypto');
+  const verifier=randomBytes(32).toString('base64url');
+  const challenge=createHash('sha256').update(verifier).digest('base64url');
+  const state=randomBytes(24).toString('hex');
+  const nonce=randomBytes(24).toString('hex');
+  const redirect='https://native.localhost:3002/auth/callback';
+  await page.route(redirect+'*',route=>route.fulfill({status:200,body:'Native callback received'}));
+  const auth=new URL(process.env.OIDC_ISSUER+'/protocol/openid-connect/auth');
+  for(const [key,value] of Object.entries({client_id:'sdk-native',redirect_uri:redirect,response_type:'code',scope:'openid',code_challenge:challenge,code_challenge_method:'S256',state,nonce}))auth.searchParams.set(key,value);
+  await page.goto(auth.href);
+  await page.locator('#username').fill(process.env.OIDC_TEST_USERNAME);
+  await page.locator('#password').fill(process.env.OIDC_TEST_PASSWORD);
+  await page.locator('#kc-login').click();
+  await page.waitForURL(redirect+'*');
+  const callback=new URL(page.url());
+  expect(callback.searchParams.get('state')).toBe(state);
+  const response=await request.post(process.env.OIDC_ISSUER+'/protocol/openid-connect/token',{form:{
+    grant_type:'authorization_code',client_id:'sdk-native',redirect_uri:redirect,
+    code:callback.searchParams.get('code'),code_verifier:verifier
+  }});
+  expect(response.status()).toBe(200);
+  const tokens=await response.json();
+  expect(tokens.token_type.toLowerCase()).toBe('bearer');
+  expect(tokens.id_token).toBeTruthy();
+  // Payload assertion checks nonce propagation, not signature validation.
+  expect(JSON.parse(Buffer.from(tokens.id_token.split('.')[1],'base64url').toString()).nonce).toBe(nonce);
+});

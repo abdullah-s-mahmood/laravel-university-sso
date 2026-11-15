@@ -4,7 +4,7 @@ permissions:
   contents: read
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       matrix:
         include:
@@ -28,7 +28,7 @@ jobs:
       - run: composer show --format=json > dependency-inventory.json
       - run: cd examples/consumer && composer install --no-interaction && php smoke.php
   keycloak:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -44,7 +44,7 @@ jobs:
       - run: cd tests/Integration && npm ci && npx playwright install --with-deps chromium
       - run: tests/Integration/run.sh
   locked:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: shivammathur/setup-php@v2

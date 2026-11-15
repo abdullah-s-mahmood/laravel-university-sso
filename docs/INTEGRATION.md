@@ -89,7 +89,8 @@ and catalog content before sending it. No HR payload is requested or persisted.
 
 ## Middleware and sessions
 
-Apply web then university.auth (alias sso), then university.permission:documents.read
+Apply web then university.session-valid (aliases university.auth and sso),
+then university.permission:documents.read
 or university.role:reader. These expose request attribute sso.context.
 Resource-state authorization remains the application's job.
 Context/facade reads are snapshots and do not independently recheck revocation;
@@ -109,3 +110,11 @@ logout_retention (default 86400 seconds) must exceed maximum local session lifet
 Duplicate logout delivery is idempotent. The central status check remains authority.
 
 No refresh-token persistence/renewal or automatic local User provisioning is supplied.
+
+Permission/role middleware MUST follow university.session-valid on the same request.
+Running permission middleware alone returns 401 even if a context snapshot exists
+in the session. DTO can() is only a UI hint; it does not refresh authorization.
+Sso::hasPermission(string permission, ?callable resourcePolicy = null, ?Session = null)
+performs a fresh authoritative status check and invokes the policy with
+BootstrapContext only after the permission matches. Use a resource policy for
+resource-sensitive decisions; the SDK cannot infer document workflow rules.
