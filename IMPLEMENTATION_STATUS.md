@@ -26,20 +26,24 @@ local session ID rotation. Preserves original session iat for backchannel checks
 Registry events add refreshed/refresh_failed and previous hashed session reference.
 No public AccessTokenValidator API change; existing consumers keep refresh disabled.
 
-Authored hosted coverage adds two consecutive confidential SDK refreshes, registry
-hook delivery and native provider rejection of a retired refresh token. These new
-provider refresh scenarios have NOT yet passed CI.
+Hosted run 43820813588 at ea8c201 passed all six SDK jobs: locked installation,
+Laravel 12/13 on PHP 8.4/8.5, and Keycloak. All five browser tests passed in 9.1s,
+including two consecutive confidential SDK refreshes, registry hook delivery and
+native provider rejection of a retired refresh token:
+https://github.com/abdullah-s-mahmood/laravel-university-sso/actions/runs/43820813588
 
 Local verification: Laravel 13 / PHP 8.4: 35 tests, 112 assertions, Pint and
 PHPStan level 5 pass. Laravel 12 / PHP 8.4 also passes the final 35 tests / 112 assertions.
 Composer validation/audit and dependency license check pass. Gitleaks 8.30.1
 scanned the source snapshot with redaction and found no leaks.
 Local PHP 8.5 test attempt could not start: DOM/mbstring/XMLWriter extensions
-are unavailable. New hosted PHP 8.5 matrix jobs install these extensions.
-Security workflows now define secret, license, SBOM and container scans;
-their hosted results remain pending and no clean container-scan claim is made.
+are unavailable. Hosted PHP 8.5 matrix jobs installed these extensions and passed.
+Security run 43820813493 passed secrets and dependency/license/SBOM checks but
+FAILED the enforced container scan with six HIGH findings in the official
+Keycloak 26.8.2 fixture image. See docs/CONTAINER_SECURITY_FINDINGS.md.
+No scan suppression, severity downgrade, ignore-unfixed or waiver was introduced.
 
-Remaining before stable: hosted refresh and broader PHP/security checks, any
-resulting fixes, independent security review, release/upgrade acceptance and
+Remaining before stable: container finding remediation and re-scan, independent
+security review of lifecycle/refresh, release/upgrade acceptance and
 owner approval of package publication/versioning. No stable tag or Packagist
 ownership claim. Parent controls PR publication and merges; main is protected.

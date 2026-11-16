@@ -6,7 +6,7 @@
 - Add fresh-ID validation, identity/session binding and replay suppression.
 - Rotate local session IDs on refresh; emit token-free refreshed/refresh_failed events.
 - Recheck durable broker epoch/version and backchannel markers during refresh.
-- Add actual-provider SDK refresh and native replay scenarios (CI pending).
+- Add actual-provider SDK refresh and native replay scenarios (passed run 43820813588).
 - Extend PHP matrix to 8.5 and add secret/license/SBOM/container scan workflows.
 - Add controller, routes, Blade and environment examples plus upgrade instructions.
 
@@ -19,3 +19,6 @@
 - 765a7e2: hosted run 43781772392 passed three real-provider browser tests.
 
 No stable tag, Packagist publication or comprehensive acceptance is claimed.
+
+Security acceptance remains blocked by six HIGH upstream fixture-image findings;
+see docs/CONTAINER_SECURITY_FINDINGS.md. No ignore policy or release waiver exists.
