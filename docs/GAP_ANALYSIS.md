@@ -10,7 +10,8 @@ local/RP/backchannel logout, independent consumer, Testbench matrix, static/styl
 checks, audits, dependency locks and CycloneDX inventory, actual-provider CI
 harness with confidential host-separated consumers and a fake Broker.
 
-Pending acceptance: successful hosted Keycloak browser run, production Broker
-integration, security review closure and release process. Refresh-token renewal
-remains unimplemented. The caller must restart authorization after token expiry.
-No live university identity, real account or private realm data is included.
+Scoped actual-provider SSO/local/global logout/backchannel acceptance passed
+hosted baselines. Current branch adds refresh rotation and broader security/PHP
+matrix jobs, with provider refresh and security jobs pending CI. Production
+Broker integration, independent security review and stable release acceptance
+remain open. No real university accounts or private realm data is included.

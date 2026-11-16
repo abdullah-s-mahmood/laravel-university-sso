@@ -101,6 +101,18 @@ test('native public client exchanges authorization code with S256 verifier and n
   const tokens=await response.json();
   expect(tokens.token_type.toLowerCase()).toBe('bearer');
   expect(tokens.id_token).toBeTruthy();
+  const refreshGrant=await request.post(process.env.OIDC_ISSUER+'/protocol/openid-connect/token',{form:{
+    grant_type:'refresh_token',client_id:'sdk-native',refresh_token:tokens.refresh_token
+  }});
+  expect(refreshGrant.status()).toBe(200);
+  const rotated=await refreshGrant.json();
+  expect(rotated.refresh_token !== tokens.refresh_token).toBe(true);
+  const replay=await request.post(process.env.OIDC_ISSUER+'/protocol/openid-connect/token',{form:{
+    grant_type:'refresh_token',client_id:'sdk-native',refresh_token:tokens.refresh_token
+  }});
+  expect(replay.status()).toBe(400);
+  expect((await replay.json()).error).toBe('invalid_grant');
+
   // Payload assertion checks nonce propagation, not signature validation.
   expect(JSON.parse(Buffer.from(tokens.id_token.split('.')[1],'base64url').toString()).nonce).toBe(nonce);
 });
@@ -121,4 +133,23 @@ test('RP global logout delivers signed backchannel and clears provider SSO',asyn
   await expect.poll(async()=>(await second.request.get('https://two.localhost:3001/account')).status()).toBe(401);
   await page.goto('https://one.localhost:3000/login');
   await expect(page.locator('#username')).toBeVisible();
+});
+
+test('SDK refresh rotates confidential credentials twice and records registry lifecycle',async({page})=>{
+  await page.goto('https://one.localhost:3000/login');
+  await page.locator('#username').fill(process.env.OIDC_TEST_USERNAME);
+  await page.locator('#password').fill(process.env.OIDC_TEST_PASSWORD);
+  await page.locator('#kc-login').click();
+  await page.waitForURL('https://one.localhost:3000/account');
+  const before=await (await page.request.get('https://one.localhost:3000/lifecycle-operations')).json();
+  const previous=before.filter(operation=>operation==='refreshed').length;
+  for(let iteration=0;iteration<2;iteration++){
+    await page.goto('https://one.localhost:3000/refresh-form');
+    await page.getByRole('button',{name:'Refresh session',exact:true}).click();
+    await page.waitForURL('https://one.localhost:3000/account');
+    expect(await page.locator('body').innerText()).toContain('synthetic-person');
+  }
+  const operations=await (await page.request.get('https://one.localhost:3000/lifecycle-operations')).json();
+  expect(operations.filter(operation=>operation==='refreshed').length).toBe(previous+2);
+  expect(operations).toContain('registered');
 });

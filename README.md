@@ -54,3 +54,21 @@ CI covers Laravel 12/Testbench 10 and Laravel 13/Testbench 11 with PHP 8.4.
 
 Real-provider harness (with fake Broker): [instructions](tests/Integration/README.md).
 Run php tools/sbom.php for a CycloneDX inventory of locked dependencies.
+
+## Refresh, examples and development installation
+
+Refresh stays disabled for existing consumers. See [upgrade guide](docs/UPGRADING.md)
+before setting SSO_REFRESH_ENABLED=true: rotating provider policy, server-side
+JSON sessions, shared atomic cache and route session blocking are required.
+The API is Sso::refresh($request->session()): BootstrapContext. Resource decisions
+still require authoritative state and consumer policy.
+
+Copy [controller/routes/Blade examples](examples/laravel/) into an independent
+Laravel app and adapt route names. [Environment example](.env.example) contains
+no credentials. Never place tokens in frontend storage or application URLs.
+
+Until a reviewed release and Packagist ownership exist, a Composer VCS repository
+can point to https://github.com/abdullah-s-mahmood/laravel-university-sso and require
+university-sso/laravel-university-sso at a reviewed dev-main commit. Keep the consumer
+lockfile. No stable release has been published. See [changelog](CHANGELOG.md)
+and [mandatory checklist](docs/SDK_CHECKLIST.md).

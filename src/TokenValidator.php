@@ -11,6 +11,21 @@ final class TokenValidator implements AccessTokenValidator
 {
     public function validate(string $jwt, array $keys, string $issuer, string $client, ?string $nonce = null, bool $logout = false): array
     {
+        return $this->verifyIdentity($jwt, $keys, $issuer, $client, $nonce, $logout);
+    }
+
+    public function validateRefreshedIdToken(string $jwt, array $keys, string $issuer, string $client, string $subject, ?string $originalNonce): array
+    {
+        $claims = $this->verifyIdentity($jwt, $keys, $issuer, $client, $originalNonce, false, true);
+        if ($claims['sub'] !== $subject) {
+            throw new AuthenticationException('Refreshed subject mismatch.');
+        }
+
+        return $claims;
+    }
+
+    private function verifyIdentity(string $jwt, array $keys, string $issuer, string $client, ?string $nonce, bool $logout, bool $allowMissingNonce = false): array
+    {
         try {
             $claims = $this->decode($jwt, $keys);
             $aud = $claims['aud'] ?? [];
@@ -29,7 +44,9 @@ final class TokenValidator implements AccessTokenValidator
                 if (! is_object($claims['events'] ?? null) || ! is_object($events['http://schemas.openid.net/event/backchannel-logout'] ?? null) || array_key_exists('nonce', $claims) || ! is_string($claims['jti'] ?? null) || $claims['jti'] === '' || (array_key_exists('sid', $claims) && (! is_string($claims['sid']) || $claims['sid'] === '')) || (array_key_exists('sub', $claims) && (! is_string($claims['sub']) || $claims['sub'] === '')) || ((! is_string($claims['sid'] ?? null) || $claims['sid'] === '') && (! is_string($claims['sub'] ?? null) || $claims['sub'] === '')) || $claims['iat'] < time() - 300) {
                     throw new ProtocolException('Invalid logout token.');
                 }
-            } elseif (! is_string($claims['sub'] ?? null) || $claims['sub'] === '' || $nonce === null || ! is_string($claims['nonce'] ?? null) || ! hash_equals($nonce, $claims['nonce'])) {
+            } elseif (! is_string($claims['sub'] ?? null) || $claims['sub'] === ''
+                || (! $allowMissingNonce && ! array_key_exists('nonce', $claims))
+                || (array_key_exists('nonce', $claims) && ($nonce === null || ! is_string($claims['nonce']) || ! hash_equals($nonce, $claims['nonce'])))) {
                 throw new ProtocolException('Invalid identity or nonce.');
             }
 

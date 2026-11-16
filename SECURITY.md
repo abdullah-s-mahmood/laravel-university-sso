@@ -24,8 +24,16 @@ workers must share the same durable cache and support its locking API.
 DTO can() and facade context getters expose snapshots only. Sensitive decisions
 require authoritative middleware or hasPermission() with a resource policy.
 
-No real provider interoperability, penetration test or production review has been
-performed. Initial source review authorized public repository creation. Final security
+Scoped actual-provider browser tests have passed (see IMPLEMENTATION_STATUS.md).
+No penetration test or comprehensive production security acceptance is claimed. Initial source review authorized public repository creation. Final security
 acceptance and a successful actual-provider run are still required for a stable release.
 No-exp logout tokens are accepted for older-provider compatibility under a
 five-minute iat window; when exp is present it is strictly checked.
+
+Refresh is disabled by default. When enabled, tokens are encrypted with Laravel
+Crypt and stored only in server-side session arrays. Shared atomic replay markers
+prevent parallel stale snapshots from spending the same refresh credential twice.
+Use session blocking, provider rotation and retention covering local session
+lifetime. Ambiguous post-grant failures terminate the local session without retry.
+Discovery outages before a grant preserve the unconsumed session. Registry hooks
+never receive credentials. See docs/UPGRADING.md for the complete failure contract.

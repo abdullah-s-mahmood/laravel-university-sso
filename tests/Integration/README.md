@@ -51,3 +51,9 @@ The Linux test container uses host networking with Keycloak bound to loopback,
 so the confidential clients can receive direct HTTP loopback backchannels on
 ports 8000/8001. Browser/SDK endpoints retain verified HTTPS. This is a development
 fixture topology, not a production transport recommendation.
+
+The refresh extension enables provider rotation with zero reuse, then checks
+two consecutive SDK confidential refreshes and registry lifecycle operations.
+The native public-client test also refreshes once and confirms the retired
+provider credential returns invalid_grant. Credentials are never rendered by
+consumer pages or included in lifecycle events/artifacts.

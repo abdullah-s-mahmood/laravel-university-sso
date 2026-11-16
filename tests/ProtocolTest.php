@@ -11,6 +11,7 @@ use Illuminate\Http\Client\Factory;
 use Illuminate\Session\ArraySessionHandler;
 use Illuminate\Session\Store;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Orchestra\Testbench\TestCase;
@@ -386,5 +387,249 @@ final class ProtocolTest extends TestCase
                 }
             }
         }
+    }
+
+    private function refreshIdentity(string $token = 'refresh-old'): array
+    {
+        config(['university-sso.refresh.enabled' => true]);
+
+        return [
+            'issuer' => 'https://id.example.invalid', 'sub' => 'synthetic-subject', 'sid' => null,
+            'iat' => time() - 60, 'nonce' => 'nonce', 'auth_time' => null, 'access_token' => 'access-old',
+            'refresh_token' => Crypt::encryptString($token),
+            'id_token' => 'original-id', 'context' => BootstrapContext::fromArray($this->bootstrap(), 'demo')->toArray(),
+        ];
+    }
+
+    private function fakeRefresh(array $tokens, ?array $bootstrap = null, int $status = 200): void
+    {
+        Http::fake([
+            '*/.well-known/*' => Http::response($this->discovery()),
+            '*/token' => Http::response($tokens, $status),
+            '*/bootstrap' => Http::response($bootstrap ?? $this->bootstrap()),
+            '*/status' => Http::response(['active' => true, 'university_id' => 'person-demo', 'session_epoch' => 1, 'authorization_version' => 2]),
+        ]);
+    }
+
+    public function test_refresh_rotates_encrypted_credentials_and_session_without_exposing_tokens(): void
+    {
+        Event::fake([SessionLifecycle::class]);
+        $session = app('session.store');
+        $session->start();
+        $identity = $this->refreshIdentity();
+        $session->put('sso.identity', $identity);
+        $previousId = $session->getId();
+        $this->fakeRefresh(['access_token' => 'access-new', 'refresh_token' => 'refresh-new', 'token_type' => 'Bearer', 'expires_in' => 120]);
+        self::assertSame('person-demo', app(Sso::class)->refresh($session)->id);
+        $renewed = json_decode(json_encode($session->get('sso.identity'), JSON_THROW_ON_ERROR), true, 512, JSON_THROW_ON_ERROR);
+        self::assertNotSame($previousId, $session->getId());
+        self::assertNotSame('refresh-new', $renewed['refresh_token']);
+        self::assertSame('refresh-new', Crypt::decryptString($renewed['refresh_token']));
+        self::assertSame($identity['iat'], $renewed['iat']);
+        self::assertSame('original-id', $renewed['id_token']);
+        Event::assertDispatched(SessionLifecycle::class,
+            fn ($event) => $event->operation === 'refreshed' && $event->identity['previous_session_reference'] === hash('sha256', $previousId) && ! isset($event->identity['refresh_token']));
+        // A stale session snapshot cannot submit the retired refresh credential again.
+        $session->put('sso.identity', $identity);
+        try {
+            app(Sso::class)->refresh($session);
+            self::fail();
+        } catch (AuthenticationException) {
+            self::assertNull($session->get('sso.identity'));
+        }
+        self::assertCount(1, Http::recorded(fn ($request) => str_ends_with($request->url(), '/token')));
+    }
+
+    public function test_refreshed_id_token_allows_absent_nonce_but_binds_identity_and_present_nonce(): void
+    {
+        [$pem,$keys] = $this->signing();
+        $validator = new TokenValidator;
+        $claims = $this->claims();
+        unset($claims['nonce']);
+        self::assertSame('synthetic-subject', $validator->validateRefreshedIdToken(JWT::encode($claims, $pem, 'RS256', 'test'), $keys, 'https://id.example.invalid', 'demo', 'synthetic-subject', 'nonce')['sub']);
+        foreach ([['sub' => 'other'], ['iss' => 'https://wrong.invalid'], ['aud' => 'other'], ['nonce' => 'wrong'], ['exp' => time() - 10]] as $change) {
+            try {
+                $validator->validateRefreshedIdToken(JWT::encode(array_merge($claims, $change), $pem, 'RS256', 'test'), $keys, 'https://id.example.invalid', 'demo', 'synthetic-subject', 'nonce');
+                self::fail();
+            } catch (ProtocolException) {
+                self::assertTrue(true);
+            }
+        }
+    }
+
+    public function test_nonrotating_refresh_response_ends_session(): void
+    {
+        $session = app('session.store');
+        $session->put('sso.identity', $this->refreshIdentity());
+        $this->fakeRefresh(['access_token' => 'new', 'refresh_token' => 'refresh-old', 'token_type' => 'Bearer']);
+        try {
+            app(Sso::class)->refresh($session);
+            self::fail();
+        } catch (AuthenticationException) {
+            self::assertNull($session->get('sso.identity'));
+        }
+    }
+
+    public function test_refresh_cannot_accept_changed_broker_authorization(): void
+    {
+        $session = app('session.store');
+        $session->put('sso.identity', $this->refreshIdentity());
+        $data = $this->bootstrap();
+        $data['security']['session_epoch'] = 2;
+        $this->fakeRefresh(['access_token' => 'new', 'refresh_token' => 'new', 'token_type' => 'Bearer'], $data);
+        try {
+            app(Sso::class)->refresh($session);
+            self::fail();
+        } catch (AuthenticationException) {
+            self::assertNull($session->get('sso.identity'));
+        }
+    }
+
+    public function test_ambiguous_refresh_failure_is_503_class_and_cannot_retry_old_credential(): void
+    {
+        $session = app('session.store');
+        $session->put('sso.identity', $this->refreshIdentity());
+        $this->fakeRefresh([], status: 503);
+        try {
+            app(Sso::class)->refresh($session);
+            self::fail();
+        } catch (UpstreamException) {
+            self::assertNull($session->get('sso.identity'));
+        }
+        self::assertCount(1, Http::recorded(fn ($request) => str_ends_with($request->url(), '/token')));
+    }
+
+    public function test_outage_before_refresh_grant_preserves_unconsumed_session(): void
+    {
+        $session = app('session.store');
+        $identity = $this->refreshIdentity();
+        $session->put('sso.identity', $identity);
+        Http::fake(['*' => Http::response([], 503)]);
+        try {
+            app(Sso::class)->refresh($session);
+            self::fail();
+        } catch (UpstreamException) {
+            self::assertSame($identity, $session->get('sso.identity'));
+        }
+        self::assertCount(0, Http::recorded(fn ($request) => str_ends_with($request->url(), '/token')));
+    }
+
+    public function test_concurrent_refresh_snapshots_issue_only_one_provider_grant(): void
+    {
+        $first = app('session.store');
+        $first->start();
+        $identity = $this->refreshIdentity();
+        $first->put('sso.identity', $identity);
+        $second = new Store('parallel', new ArraySessionHandler(120), null, 'json');
+        $second->start();
+        $second->put('sso.identity', $identity);
+        $rejected = false;
+        Http::fake([
+            '*/.well-known/*' => Http::response($this->discovery()),
+            '*/token' => function () use ($second, &$rejected) {
+                try {
+                    app(Sso::class)->refresh($second);
+                    self::fail('Concurrent credential accepted');
+                } catch (AuthenticationException) {
+                    $rejected = true;
+                }
+
+                return Http::response(['access_token' => 'new', 'refresh_token' => 'new', 'token_type' => 'Bearer']);
+            },
+            '*/bootstrap' => Http::response($this->bootstrap()),
+        ]);
+        app(Sso::class)->refresh($first);
+        self::assertTrue($rejected);
+        self::assertNotNull($first->get('sso.identity'));
+        self::assertNull($second->get('sso.identity'));
+        self::assertCount(1, Http::recorded(fn ($request) => str_ends_with($request->url(), '/token')));
+    }
+
+    public function test_session_guard_refreshes_before_access_token_expiry(): void
+    {
+        $this->app['router']->get('/auto-refresh', fn () => response('ok'))->middleware(['web', 'university.session-valid']);
+        $identity = $this->refreshIdentity();
+        $identity['access_expires_at'] = time();
+        $this->fakeRefresh(['access_token' => 'new', 'refresh_token' => 'new', 'token_type' => 'Bearer', 'expires_in' => 120]);
+        $this->withSession(['sso.identity' => $identity])->getJson('/auto-refresh')->assertOk();
+        self::assertSame('new', session('sso.identity.access_token'));
+    }
+
+    public function test_logout_arriving_during_refresh_cannot_revive_session(): void
+    {
+        $session = app('session.store');
+        $identity = $this->refreshIdentity();
+        $session->put('sso.identity', $identity);
+        Http::fake([
+            '*/.well-known/*' => Http::response($this->discovery()),
+            '*/token' => Http::response(['access_token' => 'new', 'refresh_token' => 'new', 'token_type' => 'Bearer']),
+            '*/bootstrap' => function () use ($identity) {
+                Cache::put(BackchannelLogout::key($identity['issuer'], 'sub', $identity['sub']), time(), 600);
+
+                return Http::response($this->bootstrap());
+            },
+        ]);
+        try {
+            app(Sso::class)->refresh($session);
+            self::fail();
+        } catch (AuthenticationException) {
+            self::assertNull($session->get('sso.identity'));
+        }
+    }
+
+    public function test_backchannel_out_of_order_and_duplicate_events_never_regress_marker(): void
+    {
+        Event::fake([SessionLifecycle::class]);
+        [$pem,$keys] = $this->signing();
+        $claims = $this->claims();
+        unset($claims['nonce']);
+        $claims['sid'] = 'monotonic-session';
+        $claims['jti'] = 'new-event';
+        $claims['iat'] = time() - 1;
+        $claims['events'] = (object) ['http://schemas.openid.net/event/backchannel-logout' => (object) []];
+        Http::fake(['*/.well-known/*' => Http::response($this->discovery()), '*/keys' => Http::response($keys)]);
+        $handler = new BackchannelLogout;
+        $handler->handle(JWT::encode($claims, $pem, 'RS256', 'test'));
+        $latest = $claims['iat'];
+        $claims['iat'] -= 10;
+        $claims['jti'] = 'old-event';
+        $old = JWT::encode($claims, $pem, 'RS256', 'test');
+        $handler->handle($old);
+        $handler->handle($old);
+        self::assertSame($latest, Cache::get(BackchannelLogout::key($claims['iss'], 'sid', $claims['sid'])));
+        Event::assertDispatchedTimes(SessionLifecycle::class, 2);
+    }
+
+    public function test_refreshed_signed_id_token_is_verified_and_retained_for_rp_logout(): void
+    {
+        [$pem,$keys] = $this->signing();
+        $claims = $this->claims();
+        unset($claims['nonce']);
+        $session = app('session.store');
+        $session->put('sso.identity', $this->refreshIdentity());
+        $jwt = JWT::encode($claims, $pem, 'RS256', 'test');
+        Http::fake([
+            '*/.well-known/*' => Http::response($this->discovery()),
+            '*/token' => Http::response(['access_token' => 'new', 'refresh_token' => 'new', 'token_type' => 'Bearer', 'id_token' => $jwt]),
+            '*/keys' => Http::response($keys),
+            '*/bootstrap' => Http::response($this->bootstrap()),
+        ]);
+        app(Sso::class)->refresh($session);
+        self::assertSame($jwt, $session->get('sso.identity.id_token'));
+    }
+
+    public function test_refresh_never_sends_credentials_after_provider_configuration_changes(): void
+    {
+        $session = app('session.store');
+        $session->put('sso.identity', $this->refreshIdentity());
+        config(['university-sso.issuer' => 'https://replacement.example.invalid']);
+        Http::fake();
+        try {
+            app(Sso::class)->refresh($session);
+            self::fail();
+        } catch (AuthenticationException) {
+            self::assertNull($session->get('sso.identity'));
+        }
+        Http::assertNothingSent();
     }
 }

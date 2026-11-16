@@ -1,53 +1,45 @@
 # Implementation status
 
-Development snapshot; no stable release or P1 acceptance declared.
+Development snapshots only; no stable tag or comprehensive release acceptance.
 
-P0 SDK foundation validated: independent MIT Composer package, PHP 8.4,
-Laravel 12/13, Testbench, committed dependency locks, style/static/security CI,
-English/Arabic docs. No Livewire dependency or institutional private data.
+## Accepted hosted provider baselines
 
-P1 implemented for review: authorization code + PKCE S256, state/nonce,
-RS256 verification using firebase/php-jwt, issuer/audience/azp/time checks,
-JSON-compatible server sessions, bootstrap DTO/facade/contracts, fresh permission
-checks with resource policy hooks, authoritative session middleware, local and
-RP logout, signed backchannel handling with locked idempotent markers.
-Shared AccessTokenValidator interface supports broker API validation independently
-of ID-token nonce checks.
+- Run 43781772392, head 765a7e2: four jobs passed; three browser tests passed
+  in 5.8 seconds. Confidential clients on separate hosts proved PKCE/SSO,
+  cookie isolation and local logout isolation; redirect/missing-PKCE rejection
+  and a separate native public-client code exchange also passed.
+- Run 43782693712, head f4aa4cf: four jobs and all four browser tests passed,
+  adding actual RP/global logout and provider-signed backchannel delivery.
+  https://github.com/abdullah-s-mahmood/laravel-university-sso/actions/runs/43782693712
+- PR 3 merged as 7aeff84; PR 4 merged as 1a58b7d after hosted green checks,
+  adding the narrowly typed JWKS refresh signal without duplicate validation.
 
-Verified locally:
-- Laravel 13/Testbench 11: 19 tests, 60 assertions pass.
-- Laravel 12/Testbench 10: 19 tests, 60 assertions pass.
-- Pint and PHPStan level 5 pass.
-- Composer validation and audit pass; no advisories reported at execution.
-- Independent Composer consumer smoke passes; independent Laravel HTTP consumer
-  boots and denies unauthenticated access.
-- Keycloak runner shell and JavaScript syntax checked.
+These fixtures use a FAKE BROKER that verifies real provider access tokens.
+They do not establish production Broker/Gate/Persons/resource-policy acceptance.
 
-Actual scoped provider evidence: hosted run 43781772392 succeeded at
-765a7e2fc1063d051838f3d4abd25dbf02096265:
-https://github.com/abdullah-s-mahmood/laravel-university-sso/actions/runs/43781772392
-All four jobs passed (Laravel 12, Laravel 13, locked install, Keycloak).
-Three browser tests passed in 5.8 seconds: confidential web clients on separate
-hosts perform PKCE login and SSO, host-only cookies remain isolated, local logout
-preserves the other app and provider SSO, unregistered redirects and missing PKCE
-are rejected, and a public native client exchanges code with S256 without a secret.
-The fixture uses a FAKE BROKER validating real provider access tokens.
-This is not production Broker/Gate acceptance, nor evidence for actual provider
-global logout, signed backchannel delivery, refresh rotation or registry integration.
+## Current branch feat/sdk-refresh-rotation
 
-Remaining: broader provider lifecycle coverage, refresh/rotation, registry hooks,
-context middleware and checklist documentation, full security review, production Broker
-integration, operational interoperability and release acceptance. Refresh-token
-renewal is not implemented; expired tokens require a new authorization flow.
+Based on public main 1a58b7d. Implements opt-in rotating refresh with encrypted
+server-side credentials, one-use replay fingerprints, proactive expiry handling,
+same-identity and unchanged-epoch/version checks, renewed ID-token validation and
+local session ID rotation. Preserves original session iat for backchannel checks.
+Registry events add refreshed/refresh_failed and previous hashed session reference.
+No public AccessTokenValidator API change; existing consumers keep refresh disabled.
 
-Publication: owner authorized public repository creation after source review;
-origin configured by parent. Parent controls push after this local commit.
-No stable tag until full acceptance. Composer vendor name is provisional and
-does not assert Packagist ownership.
+Authored hosted coverage adds two consecutive confidential SDK refreshes, registry
+hook delivery and native provider rejection of a retired refresh token. These new
+provider refresh scenarios have NOT yet passed CI.
 
-Feature branch feat/sdk-lifecycle-context extends the accepted baseline:
-- university.context guard requires fresh session middleware and checks active context.
-- UniversityIdentity facade alias and token-free SessionLifecycle registry hooks.
-- Actual-provider RP/global logout and signed backchannel test authored; pending CI.
-- Current local Laravel 13 verification: 22 tests, 67 assertions; Pint/PHPStan pass.
-Refresh-token rotation remains pending and no stable tag is authorized.
+Local verification: Laravel 13 / PHP 8.4: 35 tests, 112 assertions, Pint and
+PHPStan level 5 pass. Laravel 12 / PHP 8.4 also passes the final 35 tests / 112 assertions.
+Composer validation/audit and dependency license check pass. Gitleaks 8.30.1
+scanned the source snapshot with redaction and found no leaks.
+Local PHP 8.5 test attempt could not start: DOM/mbstring/XMLWriter extensions
+are unavailable. New hosted PHP 8.5 matrix jobs install these extensions.
+Security workflows now define secret, license, SBOM and container scans;
+their hosted results remain pending and no clean container-scan claim is made.
+
+Remaining before stable: hosted refresh and broader PHP/security checks, any
+resulting fixes, independent security review, release/upgrade acceptance and
+owner approval of package publication/versioning. No stable tag or Packagist
+ownership claim. Parent controls PR publication and merges; main is protected.

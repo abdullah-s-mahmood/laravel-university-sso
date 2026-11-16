@@ -15,4 +15,9 @@ return [
     'post_logout_redirect_uri' => env('SSO_POST_LOGOUT_REDIRECT_URI'),
     'timeout' => 5,
     'transaction_ttl' => 300,
+    'refresh' => [
+        'enabled' => (bool) env('SSO_REFRESH_ENABLED', false),
+        'before_expiry' => 30,
+        'replay_retention' => 86400,
+    ],
 ];
