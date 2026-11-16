@@ -43,6 +43,13 @@ jobs:
       - run: composer install --prefer-dist --no-interaction
       - run: cd tests/Integration && npm ci && npx playwright install --with-deps chromium
       - run: tests/Integration/run.sh
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: sanitized-keycloak-diagnostics
+          path: tests/Integration/diagnostics/
+          retention-days: 3
+          if-no-files-found: warn
   locked:
     runs-on: ubuntu-24.04
     steps:

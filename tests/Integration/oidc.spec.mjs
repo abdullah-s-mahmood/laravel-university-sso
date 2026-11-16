@@ -1,4 +1,20 @@
 import {test,expect} from '@playwright/test';
+import fs from 'node:fs';
+const safeUrl=(value)=>{try{const url=new URL(value);return url.origin+url.pathname;}catch{return '[invalid URL]';}};
+test.beforeEach(async({page},testInfo)=>{
+  const events=[];
+  page.on('response',response=>events.push({event:'response',url:safeUrl(response.url()),status:response.status()}));
+  page.on('requestfailed',request=>events.push({event:'requestfailed',url:safeUrl(request.url()),error:request.failure()?.errorText}));
+  testInfo.safeEvents=events;
+});
+test.afterEach(async({page},testInfo)=>{
+  if(testInfo.status===testInfo.expectedStatus)return;
+  fs.mkdirSync('diagnostics',{recursive:true});
+  const snapshot={test:testInfo.title,url:safeUrl(page.url()),events:testInfo.safeEvents};
+  // Visible text excludes form field values, hidden inputs and network token responses.
+  snapshot.visibleText=await page.locator('body').innerText().catch(()=>'[unavailable]');
+  fs.writeFileSync('diagnostics/browser-'+testInfo.testId.replace(/[^a-zA-Z0-9]/g,'_')+'.json',JSON.stringify(snapshot,null,2));
+});
 test('two independent consumers: PKCE login, SSO, local logout, redirect rejection',async({page,context})=>{
   const issuer=process.env.OIDC_ISSUER;
   await page.goto('https://one.localhost:3000/login');
@@ -68,14 +84,13 @@ test('native public client exchanges authorization code with S256 verifier and n
   const state=randomBytes(24).toString('hex');
   const nonce=randomBytes(24).toString('hex');
   const redirect='https://native.localhost:3002/auth/callback';
-  await page.route(redirect+'*',route=>route.fulfill({status:200,body:'Native callback received'}));
   const auth=new URL(process.env.OIDC_ISSUER+'/protocol/openid-connect/auth');
   for(const [key,value] of Object.entries({client_id:'sdk-native',redirect_uri:redirect,response_type:'code',scope:'openid',code_challenge:challenge,code_challenge_method:'S256',state,nonce}))auth.searchParams.set(key,value);
   await page.goto(auth.href);
   await page.locator('#username').fill(process.env.OIDC_TEST_USERNAME);
   await page.locator('#password').fill(process.env.OIDC_TEST_PASSWORD);
   await page.locator('#kc-login').click();
-  await page.waitForURL(redirect+'*');
+  await page.waitForURL(url=>url.origin==='https://native.localhost:3002' && url.pathname==='/auth/callback');
   const callback=new URL(page.url());
   expect(callback.searchParams.get('state')).toBe(state);
   const response=await request.post(process.env.OIDC_ISSUER+'/protocol/openid-connect/token',{form:{

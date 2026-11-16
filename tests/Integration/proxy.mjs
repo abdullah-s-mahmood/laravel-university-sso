@@ -9,3 +9,8 @@ for(const [port,target] of [[8443,8080],[3000,8000],[3001,8001],[3443,8002]]) {
     req.pipe(upstream);
   }).listen(port,'127.0.0.1');
 }
+
+https.createServer(options,(_req,res)=>{
+  res.writeHead(200,{'content-type':'text/plain'});
+  res.end('Native callback received');
+}).listen(3002,'127.0.0.1');

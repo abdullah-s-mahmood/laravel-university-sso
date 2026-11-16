@@ -20,15 +20,16 @@ Consumer routes (under Laravel's web middleware):
 
 ```php
 use UniversitySso\Sso;
-Route::get('/login', fn (Sso $sso) => redirect()->away($sso->authorizationUrl(session())));
+use Illuminate\Http\Request;
+Route::get('/login', fn (Request $request, Sso $sso) => redirect()->away($sso->authorizationUrl($request->session())));
 Route::get('/callback', function (Illuminate\Http\Request $request, Sso $sso) {
     $sso->callback($request->session(), (string) $request->query('state'), (string) $request->query('code'));
     return redirect('/account');
 });
 Route::get('/account', fn (Illuminate\Http\Request $request) =>
     ['id' => $request->attributes->get('sso.context')->id])->middleware('sso');
-Route::post('/logout', function (Sso $sso) {
-    $sso->logout(session());
+Route::post('/logout', function (Request $request, Sso $sso) {
+    $sso->logout($request->session());
     return redirect('/');
 });
 ```

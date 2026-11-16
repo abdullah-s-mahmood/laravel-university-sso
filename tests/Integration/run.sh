@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/../.."
+SDK_PACKAGE_ROOT="$PWD"
+export SDK_PACKAGE_ROOT
 docker info >/dev/null
 export INTEGRATION_RUNTIME
 INTEGRATION_RUNTIME=$(mktemp -d)
@@ -15,12 +17,20 @@ export TLS_KEY="$INTEGRATION_RUNTIME/server.key" TLS_CERT="$INTEGRATION_RUNTIME/
 container="sdk-keycloak-$$"
 pids=()
 cleanup() {
+  exit_status=$?
+  if [ "$exit_status" -ne 0 ]; then
+    # The runner changes directory later; always use the original package root.
+    diagnostics="$SDK_PACKAGE_ROOT/tests/Integration/diagnostics"
+    mkdir -p "$diagnostics"
+    docker logs "$container" > "$INTEGRATION_RUNTIME/keycloak.log" 2>&1 || true
+    python3 "$SDK_PACKAGE_ROOT/tests/Integration/sanitize-diagnostics.py" "$INTEGRATION_RUNTIME" "$diagnostics"
+  fi
   for pid in "${pids[@]}"; do kill "$pid" 2>/dev/null || true; done
   docker rm -f "$container" >/dev/null 2>&1 || true
   rm -rf "$INTEGRATION_RUNTIME"
 }
 trap cleanup EXIT
-openssl req -x509 -newkey rsa:2048 -nodes -days 1 -keyout "$TLS_KEY" -out "$TLS_CERT" -subj /CN=localhost -addext 'subjectAltName=DNS:localhost,DNS:one.localhost,DNS:two.localhost,IP:127.0.0.1' >/dev/null 2>&1
+openssl req -x509 -newkey rsa:2048 -nodes -days 1 -keyout "$TLS_KEY" -out "$TLS_CERT" -subj /CN=localhost -addext 'subjectAltName=DNS:localhost,DNS:one.localhost,DNS:two.localhost,DNS:native.localhost,IP:127.0.0.1' >/dev/null 2>&1
 # A temporary development CA is trusted explicitly; TLS verification stays enabled.
 export NODE_EXTRA_CA_CERTS="$TLS_CERT" SSL_CERT_FILE="$TLS_CERT"
 python3 tests/Integration/generate-realm.py
@@ -54,4 +64,10 @@ cd tests/Integration
 npm ci
 npx playwright install chromium
 # Browser accepts the ephemeral fixture certificate; PHP SDK trusts its CA explicitly.
-npx playwright test
+set +e
+npx playwright test >"$INTEGRATION_RUNTIME/playwright.log" 2>&1
+test_status=$?
+set -e
+python3 "$SDK_PACKAGE_ROOT/tests/Integration/sanitize-diagnostics.py" "$INTEGRATION_RUNTIME" "$SDK_PACKAGE_ROOT/tests/Integration/diagnostics"
+cat "$SDK_PACKAGE_ROOT/tests/Integration/diagnostics/playwright.log"
+exit "$test_status"

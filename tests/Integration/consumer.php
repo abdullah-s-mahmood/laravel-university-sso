@@ -21,6 +21,8 @@ $app = Application::configure(basePath: $runtime)
     ->withProviders([SsoServiceProvider::class])
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->render(function (ProtocolException $exception) {
+            error_log('SDK protocol exception: '.get_class($exception).': '.$exception->getMessage());
+
             return response()->json(['message' => 'SSO failed.'], 401);
         });
     })
@@ -30,7 +32,7 @@ $app = Application::configure(basePath: $runtime)
     ->withRouting(using: function () {
         Route::middleware('web')->group(function () {
             Route::get('/', fn () => response('<a href="/login">Login</a>'));
-            Route::get('/login', fn (Sso $sso) => redirect()->away($sso->authorizationUrl(session())));
+            Route::get('/login', fn (Request $request, Sso $sso) => redirect()->away($sso->authorizationUrl($request->session())));
             Route::get('/auth/callback', function (Request $request, Sso $sso) {
                 $sso->callback($request->session(), (string) $request->query('state'), (string) $request->query('code'));
 
@@ -39,13 +41,13 @@ $app = Application::configure(basePath: $runtime)
             Route::get('/account', fn (Request $request) => response()->json($request->attributes->get('sso.context')->toArray()))->middleware('university.auth');
             Route::get('/observed-cookies', fn (Request $request) => response()->json(array_map(static fn (string $cookie): string => trim(explode('=', $cookie, 2)[0]), explode(';', (string) $request->server('HTTP_COOKIE', '')))))->middleware('university.auth');
             Route::get('/logout-form', fn () => response('<form method="POST" action="/logout">'.csrf_field().'<button>Local logout</button></form>'));
-            Route::post('/logout', function (Sso $sso) {
-                $sso->logout(session());
+            Route::post('/logout', function (Request $request, Sso $sso) {
+                $sso->logout($request->session());
 
                 return redirect('/');
             });
             Route::get('/global-logout-form', fn () => response('<form method="POST" action="/global-logout">'.csrf_field().'<button>Global logout</button></form>'));
-            Route::post('/global-logout', fn (Sso $sso) => redirect()->away($sso->logoutUrl(session())));
+            Route::post('/global-logout', fn (Request $request, Sso $sso) => redirect()->away($sso->logoutUrl($request->session())));
         });
     })->create();
 $app->make(Kernel::class)->bootstrap();

@@ -6,3 +6,4 @@
 /examples/consumer.env
 /tests/Integration/node_modules/
 /tests/Integration/test-results/
+/tests/Integration/diagnostics/

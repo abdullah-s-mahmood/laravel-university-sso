@@ -25,7 +25,11 @@ Verified locally:
 
 Actual Keycloak browser acceptance is PENDING. First hosted run failed before
 provider tests (runner OS/Playwright mismatch and DTO config coupling); corrections
-are committed in abce302 and require the next hosted run. Local harness attempt stopped
+are committed in abce302. Second hosted run reached Keycloak: missing-PKCE
+rejection passed; web login failed on a SessionManager versus Session type error
+in the example route, and native callback navigation failed. Request-session
+routes, a real HTTPS native callback listener and sanitized failure artifacts
+are now corrected for the next hosted run. Local harness attempt stopped
 because Docker daemon socket is unavailable. Hosted CI defines a pinned Keycloak
 26.8.2 fixture, confidential clients on separate hosts, real PKCE login and
 cross-client SSO, cookie isolation, local logout isolation, invalid redirect and

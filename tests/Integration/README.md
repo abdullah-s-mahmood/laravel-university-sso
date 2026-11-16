@@ -8,7 +8,7 @@ No Resource Owner Password Credentials grant is used or enabled.
 
 The generated realm, test user password, CA key and sessions live in an ephemeral
 temporary directory. Runtime cleanup removes the container and processes.
-Ports 8080, 8443, 3000, 3001, 3443, 8000, 8001 and 8002 must be free.
+Ports 8080, 8443, 3000, 3001, 3002, 3443, 8000, 8001 and 8002 must be free.
 Do not run concurrently with an infrastructure stack using these ports.
 
 The browser accepts the ephemeral TLS fixture certificate. PHP verifies TLS using
@@ -37,3 +37,9 @@ CONSUMER_COOKIE, CONSUMER_ORIGIN and OIDC_ISSUER. Register exact callback paths
 and configure OIDC_AUDIENCE / OIDC_ALLOWED_PARTIES for the fake broker. The stock
 runner deliberately provisions its own generic realm and never modifies existing
 infrastructure.
+
+Failed hosted runs upload sanitized-keycloak-diagnostics (three-day retention).
+It includes sanitized service logs and query-free browser response/failure events.
+Realm imports, keys, session files, token responses and network traces are excluded.
+The native public client performs a separate browser authorization-code + S256
+exchange without a client secret, using its own HTTPS callback listener.
