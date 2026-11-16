@@ -9,9 +9,11 @@ use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+use UniversitySso\BackchannelLogout;
 use UniversitySso\ProtocolException;
 use UniversitySso\Sso;
 use UniversitySso\SsoServiceProvider;
+use UniversitySso\UpstreamException;
 
 $runtime = getenv('CONSUMER_RUNTIME');
 if (! $runtime) {
@@ -30,6 +32,23 @@ $app = Application::configure(basePath: $runtime)
         $middleware->trustProxies(at: ['127.0.0.1', '::1']);
     })
     ->withRouting(using: function () {
+        // Provider-to-server route has no web/session/CSRF middleware.
+        Route::post('/auth/backchannel', function (Request $request) {
+            $token = $request->input('logout_token');
+            if (! is_string($token) || $token === '' || strlen($token) > 16384) {
+                return response('', 400);
+            }
+            try {
+                app(BackchannelLogout::class)->handle($token);
+            } catch (UpstreamException) {
+                return response('', 503);
+            } catch (ProtocolException) {
+                return response('', 400);
+            }
+
+            return response('', 200);
+        });
+
         Route::middleware('web')->group(function () {
             Route::get('/', fn () => response('<a href="/login">Login</a>'));
             Route::get('/login', fn (Request $request, Sso $sso) => redirect()->away($sso->authorizationUrl($request->session())));

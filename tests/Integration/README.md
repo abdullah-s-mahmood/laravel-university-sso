@@ -43,3 +43,11 @@ It includes sanitized service logs and query-free browser response/failure event
 Realm imports, keys, session files, token responses and network traces are excluded.
 The native public client performs a separate browser authorization-code + S256
 exchange without a client secret, using its own HTTPS callback listener.
+
+The extended lifecycle test adds RP-initiated logout and a real signed provider
+backchannel delivery to consumer two. It deliberately keeps the fake Broker's
+status active: rejection must come from the provider-signed logout marker.
+The Linux test container uses host networking with Keycloak bound to loopback,
+so the confidential clients can receive direct HTTP loopback backchannels on
+ports 8000/8001. Browser/SDK endpoints retain verified HTTPS. This is a development
+fixture topology, not a production transport recommendation.

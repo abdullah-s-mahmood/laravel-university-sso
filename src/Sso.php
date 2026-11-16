@@ -97,6 +97,9 @@ final class Sso implements Contracts\BrokerClient
         }
         $context = $this->bootstrap($tokens['access_token'], $claims['iss'], $claims['sub']);
         $session->regenerate(true);
+        $this->notifySession('registered', $session, [
+            'issuer' => $claims['iss'], 'sub' => $claims['sub'], 'sid' => $claims['sid'] ?? null,
+        ], $context);
         $session->put('sso.identity', ['issuer' => $claims['iss'], 'sub' => $claims['sub'], 'sid' => $claims['sid'] ?? null, 'iat' => $claims['iat'], 'access_token' => $tokens['access_token'], 'id_token' => $tokens['id_token'], 'context' => $context->toArray()]);
 
         return $context;
@@ -120,7 +123,11 @@ final class Sso implements Contracts\BrokerClient
         }
         foreach (['sid', 'sub'] as $kind) {
             if (is_string($identity[$kind] ?? null)) {
-                $marker = Cache::get(BackchannelLogout::key($identity['issuer'], $kind, $identity[$kind]));
+                try {
+                    $marker = Cache::get(BackchannelLogout::key($identity['issuer'], $kind, $identity[$kind]));
+                } catch (\Throwable) {
+                    throw new UpstreamException('Session revocation store unavailable.');
+                }
                 if ($marker !== null && ($kind === 'sid' || $identity['iat'] <= $marker)) {
                     throw new ProtocolException('Session logged out.');
                 }
@@ -201,14 +208,38 @@ final class Sso implements Contracts\BrokerClient
             'client_id' => $this->setting('client_id'),
             'post_logout_redirect_uri' => Http::url($this->setting('post_logout_redirect_uri')),
         ], '', '&', PHP_QUERY_RFC3986);
-        $this->logout($session);
+        $this->logout($session, 'provider_logout');
 
         return $url;
     }
 
-    public function logout(Session $session): void
+    private function notifySession(string $operation, Session $session, array $identity, ?BootstrapContext $context = null): void
     {
-        $session->invalidate();
-        $session->regenerateToken();
+        try {
+            event(new Events\SessionLifecycle($operation, [
+                'issuer' => $identity['issuer'], 'client_id' => $this->setting('client_id'),
+                'subject' => $identity['sub'], 'sid' => $identity['sid'] ?? null,
+                'session_reference' => hash('sha256', $session->getId()),
+                'university_id' => $context->id ?? ($identity['context']['user']['university_id'] ?? null),
+                'session_epoch' => $context->epoch ?? ($identity['context']['security']['session_epoch'] ?? null),
+                'authorization_version' => $context->authorizationVersion ?? ($identity['context']['security']['authorization_version'] ?? null),
+                'expires_at' => time() + (int) config('session.lifetime', 120) * 60,
+            ]));
+        } catch (\Throwable) {
+            throw new UpstreamException('Session lifecycle listener unavailable.');
+        }
+    }
+
+    public function logout(Session $session, string $operation = 'local_logout'): void
+    {
+        try {
+            $identity = $session->get('sso.identity');
+            if (is_array($identity) && isset($identity['issuer'], $identity['sub'])) {
+                $this->notifySession($operation, $session, $identity);
+            }
+        } finally {
+            $session->invalidate();
+            $session->regenerateToken();
+        }
     }
 }

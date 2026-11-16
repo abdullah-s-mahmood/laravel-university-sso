@@ -32,7 +32,8 @@
         "UniversitySso\\SsoServiceProvider"
       ],
       "aliases": {
-        "UniversitySso": "UniversitySso\\Facades\\Sso"
+        "UniversitySso": "UniversitySso\\Facades\\Sso",
+        "UniversityIdentity": "UniversitySso\\Facades\\UniversityIdentity"
       }
     }
   },

@@ -26,6 +26,10 @@ final class BackchannelLogout
                 return;
             }
             Cache::put($key, max((int) Cache::get($key, 0), $claims['iat']), (int) config('university-sso.logout_retention', 86400));
+            event(new Events\SessionLifecycle('backchannel_logout', [
+                'issuer' => $claims['iss'], 'client_id' => config('university-sso.client_id'),
+                'subject' => $claims['sub'] ?? null, 'sid' => $claims['sid'] ?? null,
+            ]));
             Cache::put($replay, true, 600);
         });
     }

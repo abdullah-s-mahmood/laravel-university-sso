@@ -24,5 +24,6 @@ final class SsoServiceProvider extends ServiceProvider
         $this->app['router']->aliasMiddleware('university.session-valid', Middleware\EnsureSso::class);
         $this->app['router']->aliasMiddleware('university.permission', Middleware\RequirePermission::class);
         $this->app['router']->aliasMiddleware('university.role', Middleware\RequireRole::class);
+        $this->app['router']->aliasMiddleware('university.context', Middleware\RequireContext::class);
     }
 }

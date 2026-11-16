@@ -104,3 +104,21 @@ test('native public client exchanges authorization code with S256 verifier and n
   // Payload assertion checks nonce propagation, not signature validation.
   expect(JSON.parse(Buffer.from(tokens.id_token.split('.')[1],'base64url').toString()).nonce).toBe(nonce);
 });
+
+test('RP global logout delivers signed backchannel and clears provider SSO',async({page,context})=>{
+  await page.goto('https://one.localhost:3000/login');
+  await page.locator('#username').fill(process.env.OIDC_TEST_USERNAME);
+  await page.locator('#password').fill(process.env.OIDC_TEST_PASSWORD);
+  await page.locator('#kc-login').click();
+  await page.waitForURL('https://one.localhost:3000/account');
+  const second=await context.newPage();
+  await second.goto('https://two.localhost:3001/login');
+  await second.waitForURL('https://two.localhost:3001/account');
+  await page.goto('https://one.localhost:3000/global-logout-form');
+  await page.getByRole('button',{name:'Global logout',exact:true}).click();
+  await page.waitForURL('https://one.localhost:3000/');
+  // Fake Broker always returns active=true: only the validated signed event can deny app two.
+  await expect.poll(async()=>(await second.request.get('https://two.localhost:3001/account')).status()).toBe(401);
+  await page.goto('https://one.localhost:3000/login');
+  await expect(page.locator('#username')).toBeVisible();
+});

@@ -118,3 +118,29 @@ Sso::hasPermission(string permission, ?callable resourcePolicy = null, ?Session 
 performs a fresh authoritative status check and invokes the policy with
 BootstrapContext only after the permission matches. Use a resource policy for
 resource-sensitive decisions; the SDK cannot infer document workflow rules.
+
+## Context and registry lifecycle extension
+
+UniversityIdentity is an additional auto-discovered facade alias; the explicit
+class is UniversitySso/Facades/UniversityIdentity (PHP namespace separators).
+
+Apply university.session-valid before university.context. With no argument,
+university.context requires a nonempty active_context.context_id. With an argument
+(e.g. university.context:workspace-demo), it requires that exact active context.
+It never switches contexts or grants access to an arbitrary requested context;
+context activation remains a broker-authorized operation.
+
+Consumers can listen for UniversitySso/Events/SessionLifecycle to integrate
+their durable session registry. operation is registered, local_logout,
+provider_logout or backchannel_logout. identity contains only issuer, client_id,
+subject, sid and applicable hashed session_reference, university_id,
+session_epoch, authorization_version and expires_at. No token, secret or raw local
+session ID is emitted. Treat registry storage as personal/security data.
+
+Register a Laravel event listener that performs the consumer's authenticated,
+idempotent registry operation. No broker-private route or protocol is assumed.
+Listener failure during registration prevents the new local identity from being
+stored. Local logout always destroys the session, including when a listener fails.
+Backchannel markers remain authoritative even if a listener fails; delivery may
+retry, so consumers must make listeners idempotent. These are integration hooks,
+not proof of a production registry implementation.
