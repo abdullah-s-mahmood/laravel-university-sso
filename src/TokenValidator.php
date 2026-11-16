@@ -59,8 +59,10 @@ final class TokenValidator implements AccessTokenValidator
             }
 
             return $claims;
-        } catch (\Throwable) {
-            throw new AuthenticationException('Access token validation failed.');
+        } catch (AuthenticationException $exception) {
+            throw $exception;
+        } catch (\Throwable $exception) {
+            throw new AuthenticationException('Access token validation failed.', 0, $exception);
         }
     }
 }
