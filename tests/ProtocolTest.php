@@ -9,6 +9,7 @@ use Illuminate\Http\Client\Factory;
 use Illuminate\Session\ArraySessionHandler;
 use Illuminate\Session\Store;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Orchestra\Testbench\TestCase;
 use UniversitySso\AccessTokenValidator;
@@ -16,6 +17,7 @@ use UniversitySso\AuthenticationException;
 use UniversitySso\AuthorizationException;
 use UniversitySso\BackchannelLogout;
 use UniversitySso\BootstrapContext;
+use UniversitySso\Events\SessionLifecycle;
 use UniversitySso\ProtocolException;
 use UniversitySso\Sso;
 use UniversitySso\SsoServiceProvider;
@@ -312,5 +314,46 @@ final class ProtocolTest extends TestCase
         self::assertTrue(app(Sso::class)->hasPermission('read', fn (BootstrapContext $context) => $context->id === 'person-demo'));
         self::assertFalse(app(Sso::class)->hasPermission('read', fn () => false));
         Http::assertSentCount(2);
+    }
+
+    public function test_context_guard_requires_fresh_session_and_exact_active_context(): void
+    {
+        $this->app['router']->get('/context-alone', fn () => response('unsafe'))->middleware(['web', 'university.context:context-demo']);
+        $this->getJson('/context-alone')->assertUnauthorized();
+        $this->app['router']->get('/context-match', fn () => response('ok'))->middleware(['web', 'university.session-valid', 'university.context:context-demo']);
+        $this->app['router']->get('/context-other', fn () => response('unsafe'))->middleware(['web', 'university.session-valid', 'university.context:other']);
+        $data = $this->bootstrap();
+        $data['active_context'] = ['context_id' => 'context-demo'];
+        $identity = ['issuer' => 'https://id.example.invalid', 'sub' => 'synthetic', 'iat' => time(), 'access_token' => 'synthetic', 'context' => BootstrapContext::fromArray($data, 'demo')->toArray()];
+        Http::fake(['*/status' => Http::response(['active' => true, 'university_id' => 'person-demo', 'session_epoch' => 1, 'authorization_version' => 2])]);
+        $this->withSession(['sso.identity' => $identity])->getJson('/context-match')->assertOk();
+        $this->getJson('/context-other')->assertForbidden();
+    }
+
+    public function test_registry_event_is_token_free_and_local_logout_clears_session(): void
+    {
+        Event::fake([SessionLifecycle::class]);
+        $session = app('session.store');
+        $session->start();
+        $reference = hash('sha256', $session->getId());
+        $session->put('sso.identity', ['issuer' => 'https://id.example.invalid', 'sub' => 'synthetic', 'access_token' => 'never-emit', 'id_token' => 'never-emit', 'context' => $this->bootstrap()]);
+        app(Sso::class)->logout($session);
+        self::assertNull($session->get('sso.identity'));
+        Event::assertDispatched(SessionLifecycle::class, fn ($event) => $event->operation === 'local_logout' && $event->identity['session_reference'] === $reference && ! array_key_exists('access_token', $event->identity));
+        $event = new SessionLifecycle('registered', ['issuer' => 'issuer', 'access_token' => 'secret', 'refresh_token' => 'secret']);
+        self::assertSame(['issuer' => 'issuer'], $event->identity);
+    }
+
+    public function test_registry_listener_failure_cannot_prevent_local_logout(): void
+    {
+        Event::listen(SessionLifecycle::class, fn () => throw new \RuntimeException('unavailable'));
+        $session = app('session.store');
+        $session->put('sso.identity', ['issuer' => 'https://id.example.invalid', 'sub' => 'synthetic']);
+        try {
+            app(Sso::class)->logout($session);
+            self::fail();
+        } catch (UpstreamException) {
+            self::assertNull($session->get('sso.identity'));
+        }
     }
 }

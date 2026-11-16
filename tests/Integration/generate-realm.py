@@ -7,7 +7,8 @@ for client, host, port, secret in [('sdk-one', 'one.localhost', 3000, os.environ
         'publicClient': False, 'secret': secret, 'clientAuthenticatorType': 'client-secret', 'standardFlowEnabled': True,
         'implicitFlowEnabled': False, 'directAccessGrantsEnabled': False,
         'redirectUris': [f'https://{host}:{port}/auth/callback'],
-        'attributes': {'pkce.code.challenge.method': 'S256', 'post.logout.redirect.uris': f'https://{host}:{port}/'},
+        'backchannelLogoutUrl': f'http://127.0.0.1:{port + 5000}/auth/backchannel',
+        'attributes': {'pkce.code.challenge.method': 'S256', 'post.logout.redirect.uris': f'https://{host}:{port}/', 'backchannel.logout.session.required': 'true'},
         'protocolMappers': [{
             'name': 'sdk-audience', 'protocol': 'openid-connect',
             'protocolMapper': 'oidc-audience-mapper',

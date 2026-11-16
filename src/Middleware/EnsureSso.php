@@ -24,7 +24,11 @@ final class EnsureSso
         } catch (AuthorizationException) {
             return response()->json(['message' => 'Access denied.'], 403);
         } catch (\Throwable) {
-            $this->sso->logout($request->session());
+            try {
+                $this->sso->logout($request->session());
+            } catch (UpstreamException) {
+                return response()->json(['message' => 'Session registry unavailable.'], 503);
+            }
 
             return response()->json(['message' => 'Authentication required.'], 401);
         }

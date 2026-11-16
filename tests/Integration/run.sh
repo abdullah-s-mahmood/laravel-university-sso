@@ -36,7 +36,7 @@ export NODE_EXTRA_CA_CERTS="$TLS_CERT" SSL_CERT_FILE="$TLS_CERT"
 python3 tests/Integration/generate-realm.py
 chmod 755 "$INTEGRATION_RUNTIME"
 chmod 644 "$INTEGRATION_RUNTIME/realm.json"
-docker run -d --name "$container" -p 127.0.0.1:8080:8080 -v "$INTEGRATION_RUNTIME/realm.json:/opt/keycloak/data/import/realm.json:ro" quay.io/keycloak/keycloak:26.8.2 start-dev --import-realm --hostname=https://localhost:8443 --proxy-headers=xforwarded >/dev/null
+docker run -d --name "$container" --network host -v "$INTEGRATION_RUNTIME/realm.json:/opt/keycloak/data/import/realm.json:ro" quay.io/keycloak/keycloak:26.8.2 start-dev --http-host=127.0.0.1 --import-realm --hostname=https://localhost:8443 --proxy-headers=xforwarded >/dev/null
 node tests/Integration/proxy.mjs >"$INTEGRATION_RUNTIME/proxy.log" 2>&1 &
 pids+=("$!")
 for attempt in $(seq 1 120); do
