@@ -72,3 +72,15 @@ can point to https://github.com/abdullah-s-mahmood/laravel-university-sso and re
 university-sso/laravel-university-sso at a reviewed dev-main commit. Keep the consumer
 lockfile. No stable release has been published. See [changelog](CHANGELOG.md)
 and [mandatory checklist](docs/SDK_CHECKLIST.md).
+
+
+When a Broker supplies `security.context_expires_at` (an RFC 3339 timestamp), the
+SDK renews the expired snapshot using the existing access token before authorizing
+an action. Renewal must retain identity, epoch and authorization version; outages
+fail closed without granting the action. Token refresh and context renewal are
+separate operations. A Broker that starts sending an expiry must keep sending it.
+
+Backchannel lifecycle listeners receive a deterministic `event_reference` and
+`occurred_at`; consumers should deduplicate registry work using that reference.
+The local invalidation marker is written before the listener runs. A listener or
+cache failure returns an unavailable error and permits a safe delivery retry.

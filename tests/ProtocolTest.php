@@ -7,6 +7,7 @@ namespace UniversitySso\Tests;
 use Firebase\JWT\ExpiredException;
 use Firebase\JWT\JWT;
 use Firebase\JWT\SignatureInvalidException;
+use Illuminate\Contracts\Cache\Lock;
 use Illuminate\Http\Client\Factory;
 use Illuminate\Session\ArraySessionHandler;
 use Illuminate\Session\Store;
@@ -631,5 +632,201 @@ final class ProtocolTest extends TestCase
             self::assertNull($session->get('sso.identity'));
         }
         Http::assertNothingSent();
+    }
+
+    public function test_refreshed_identity_rejects_logout_and_access_token_profiles(): void
+    {
+        [$pem,$keys] = $this->signing();
+        $claims = $this->claims();
+        unset($claims['nonce']);
+        foreach ([
+            ['jti' => 'logout', 'sid' => 'sid', 'events' => (object) ['http://schemas.openid.net/event/backchannel-logout' => (object) []]],
+            ['typ' => 'Bearer'], ['typ' => 'Refresh'],
+        ] as $profile) {
+            try {
+                (new TokenValidator)->validateRefreshedIdToken(JWT::encode(array_merge($claims, $profile), $pem, 'RS256', 'test'), $keys, 'https://id.example.invalid', 'demo', 'synthetic-subject', 'nonce');
+                self::fail('Wrong profile accepted');
+            } catch (ProtocolException) {
+                self::assertTrue(true);
+            }
+        }
+    }
+
+    public function test_future_not_before_is_rejected_despite_ambient_library_leeway(): void
+    {
+        [$pem,$keys] = $this->signing();
+        $claims = array_merge($this->claims(), ['aud' => 'broker', 'azp' => 'demo', 'typ' => 'Bearer', 'nbf' => time() + 60]);
+        $previousLeeway = JWT::$leeway;
+        JWT::$leeway = 300;
+        try {
+            try {
+                (new TokenValidator)->validateAccessToken(JWT::encode($claims, $pem, 'RS256', 'test'), $keys, 'https://id.example.invalid', 'broker', ['demo']);
+                self::fail();
+            } catch (AuthenticationException $exception) {
+                self::assertFalse($exception->shouldRefreshJwks());
+            }
+        } finally {
+            JWT::$leeway = $previousLeeway;
+        }
+    }
+
+    private function logoutFixture(): array
+    {
+        [$pem,$keys] = $this->signing();
+        $claims = $this->claims();
+        unset($claims['nonce']);
+        $claims['jti'] = 'retryable-event';
+        $claims['sid'] = 'retryable-session';
+        $claims['events'] = (object) ['http://schemas.openid.net/event/backchannel-logout' => (object) []];
+        Http::fake(['*/.well-known/*' => Http::response($this->discovery()), '*/keys' => Http::response($keys)]);
+
+        return [$pem, $claims];
+    }
+
+    public function test_backchannel_listener_failure_preserves_marker_and_allows_idempotent_retry(): void
+    {
+        [$pem,$claims] = $this->logoutFixture();
+        $references = [];
+        Event::listen(SessionLifecycle::class, function ($event) use (&$references): void {
+            $references[] = $event->identity['event_reference'];
+            if (count($references) === 1) {
+                throw new \RuntimeException('Registry unavailable');
+            }
+        });
+        $handler = new BackchannelLogout;
+        $token = JWT::encode($claims, $pem, 'RS256', 'test');
+        try {
+            $handler->handle($token);
+            self::fail();
+        } catch (UpstreamException) {
+            self::assertSame($claims['iat'], Cache::get(BackchannelLogout::key($claims['iss'], 'sid', $claims['sid'])));
+        }
+        $handler->handle($token);
+        $handler->handle($token);
+        self::assertCount(2, $references);
+        self::assertSame($references[0], $references[1]);
+    }
+
+    public function test_backchannel_failed_marker_write_is_service_unavailable_and_emits_no_registry_event(): void
+    {
+        [$pem,$claims] = $this->logoutFixture();
+        Event::fake([SessionLifecycle::class]);
+        $lock = \Mockery::mock(Lock::class);
+        $lock->shouldReceive('block')->once()->andReturnUsing(fn ($seconds, $callback) => $callback());
+        Cache::shouldReceive('lock')->once()->andReturn($lock);
+        Cache::shouldReceive('has')->once()->andReturn(false);
+        Cache::shouldReceive('get')->once()->andReturn(0);
+        Cache::shouldReceive('put')->once()->andReturn(false);
+        try {
+            (new BackchannelLogout)->handle(JWT::encode($claims, $pem, 'RS256', 'test'));
+            self::fail();
+        } catch (UpstreamException) {
+            Event::assertNothingDispatched();
+        }
+    }
+
+    public function test_shared_cache_replay_deduplication_is_scoped_to_the_receiving_client(): void
+    {
+        [$pem,$claims] = $this->logoutFixture();
+        Event::fake([SessionLifecycle::class]);
+        $claims['aud'] = ['demo', 'other-client'];
+        $token = JWT::encode($claims, $pem, 'RS256', 'test');
+        $handler = new BackchannelLogout;
+        $handler->handle($token);
+        config(['university-sso.client_id' => 'other-client']);
+        $handler->handle($token);
+        Event::assertDispatchedTimes(SessionLifecycle::class, 2);
+        Event::assertDispatched(SessionLifecycle::class, fn ($event) => $event->identity['client_id'] === 'other-client');
+    }
+
+    private function expiredContextIdentity(): array
+    {
+        $identity = $this->refreshIdentity();
+        config(['university-sso.refresh.enabled' => false]);
+        $data = $this->bootstrap();
+        $data['security']['context_expires_at'] = gmdate('Y-m-d\TH:i:s\Z', time() - 60);
+        $identity['context'] = BootstrapContext::fromArray($data, 'demo')->toArray();
+
+        return $identity;
+    }
+
+    public function test_context_expiry_survives_json_round_trip_and_has_a_precise_boundary(): void
+    {
+        $data = $this->bootstrap();
+        $data['security']['context_expires_at'] = '2030-01-01T00:00:00Z';
+        $context = BootstrapContext::fromArray(json_decode(json_encode($data, JSON_THROW_ON_ERROR), true, 512, JSON_THROW_ON_ERROR), 'demo');
+        self::assertSame($data['security']['context_expires_at'], $context->toArray()['security']['context_expires_at']);
+        self::assertFalse($context->isExpired($context->expiresAt() - 1));
+        self::assertTrue($context->isExpired($context->expiresAt()));
+    }
+
+    public function test_malformed_context_expiry_and_negative_version_are_rejected(): void
+    {
+        foreach (['not-a-date', '2026-02-31T00:00:00Z', true, null] as $expiry) {
+            $data = $this->bootstrap();
+            $data['security']['context_expires_at'] = $expiry;
+            try {
+                BootstrapContext::fromArray($data, 'demo');
+                self::fail();
+            } catch (UpstreamException) {
+                self::assertTrue(true);
+            }
+        }
+        $data = $this->bootstrap();
+        $data['security']['authorization_version'] = -1;
+        $this->expectException(UpstreamException::class);
+        BootstrapContext::fromArray($data, 'demo');
+    }
+
+    public function test_expired_context_is_replaced_once_without_a_provider_token_grant(): void
+    {
+        $this->app['router']->get('/expiring-context', fn () => response('ok'))->middleware(['web', 'university.session-valid']);
+        $identity = $this->expiredContextIdentity();
+        $fresh = $this->bootstrap();
+        $fresh['security']['context_expires_at'] = gmdate('Y-m-d\TH:i:s\Z', time() + 300);
+        Http::fake([
+            '*/bootstrap' => Http::response($fresh),
+            '*/status' => Http::response(['active' => true, 'university_id' => 'person-demo', 'session_epoch' => 1, 'authorization_version' => 2]),
+        ]);
+        $this->withSession(['sso.identity' => $identity])->getJson('/expiring-context')->assertOk();
+        $this->getJson('/expiring-context')->assertOk();
+        self::assertCount(1, Http::recorded(fn ($request) => str_ends_with($request->url(), '/bootstrap')));
+        self::assertCount(0, Http::recorded(fn ($request) => str_ends_with($request->url(), '/token')));
+        self::assertSame($identity['access_token'], session('sso.identity.access_token'));
+    }
+
+    public function test_context_renewal_outage_preserves_expired_snapshot_but_executes_no_protected_action(): void
+    {
+        $this->app['router']->get('/expired-outage', fn () => response('unsafe'))->middleware(['web', 'university.session-valid']);
+        $identity = $this->expiredContextIdentity();
+        Http::fake(['*/bootstrap' => Http::response([], 503)]);
+        $this->withSession(['sso.identity' => $identity])->getJson('/expired-outage')->assertStatus(503);
+        self::assertSame($identity, session('sso.identity'));
+    }
+
+    public function test_context_renewal_cannot_drop_expiry_or_change_authorization_version(): void
+    {
+        $session = app('session.store');
+        $identity = $this->expiredContextIdentity();
+        $session->put('sso.identity', $identity);
+        Http::fake(['*/bootstrap' => Http::response($this->bootstrap())]);
+        try {
+            app(Sso::class)->refreshContext($session);
+            self::fail();
+        } catch (UpstreamException) {
+            self::assertSame($identity, $session->get('sso.identity'));
+        }
+        Http::swap(new Factory);
+        Http::preventStrayRequests();
+        $changed = $this->bootstrap();
+        $changed['security']['authorization_version'] = 3;
+        $changed['security']['context_expires_at'] = gmdate('Y-m-d\TH:i:s\Z', time() + 300);
+        Http::fake(['*/bootstrap' => Http::response($changed)]);
+        try {
+            app(Sso::class)->refreshContext($session);
+            self::fail();
+        } catch (AuthenticationException) {
+            self::assertNull($session->get('sso.identity'));
+        }
     }
 }

@@ -213,9 +213,7 @@ final class Sso implements Contracts\BrokerClient
                 $identity['id_token'] = $tokens['id_token'];
             }
             $context = $this->bootstrap($tokens['access_token'], $identity['issuer'], $identity['sub']);
-            if ($context->id !== $old->id || $context->epoch !== $old->epoch || $context->authorizationVersion !== $old->authorizationVersion) {
-                throw new AuthenticationException('Session authorization changed; authenticate again.');
-            }
+            $this->assertSameSecurityContext($old, $context);
             $this->assertNotLoggedOut($identity);
             $identity['access_token'] = $tokens['access_token'];
             $identity['refresh_token'] = $this->encryptRefreshToken($tokens);
@@ -244,7 +242,48 @@ final class Sso implements Contracts\BrokerClient
 
     public function bootstrap(string $accessToken, ?string $issuer = null, ?string $subject = null): BootstrapContext
     {
-        return BootstrapContext::fromArray(Http::get(rtrim(Http::url($this->setting('broker_url')), '/').'/api/v1/me/bootstrap', $accessToken), $this->setting('client_id'), $issuer, $subject, (bool) config('university-sso.require_identity_binding', false));
+        $context = BootstrapContext::fromArray(Http::get(rtrim(Http::url($this->setting('broker_url')), '/').'/api/v1/me/bootstrap', $accessToken), $this->setting('client_id'), $issuer, $subject, (bool) config('university-sso.require_identity_binding', false));
+        if ($context->isExpired()) {
+            throw new UpstreamException('Broker returned expired context.');
+        }
+
+        return $context;
+    }
+
+    private function assertSameSecurityContext(BootstrapContext $old, BootstrapContext $context): void
+    {
+        if ($context->id !== $old->id || $context->epoch !== $old->epoch || $context->authorizationVersion !== $old->authorizationVersion) {
+            throw new AuthenticationException('Session authorization changed; authenticate again.');
+        }
+        if ($old->expiresAt() !== null && $context->expiresAt() === null) {
+            throw new UpstreamException('Broker omitted the required context expiry.');
+        }
+    }
+
+    public function refreshContext(Session $session): BootstrapContext
+    {
+        $identity = $session->get('sso.identity');
+        if (! is_array($identity) || ! is_array($identity['context'] ?? null)) {
+            throw new AuthenticationException('No authenticated context.');
+        }
+        try {
+            $this->assertConfiguredIdentity($identity);
+            $this->assertNotLoggedOut($identity);
+            $old = BootstrapContext::fromArray($identity['context'], $this->setting('client_id'), $identity['issuer'], $identity['sub']);
+            $context = $this->bootstrap($identity['access_token'], $identity['issuer'], $identity['sub']);
+            $this->assertSameSecurityContext($old, $context);
+            $this->assertNotLoggedOut($identity);
+            $identity['context'] = $context->toArray();
+            $session->put('sso.identity', $identity);
+
+            return $context;
+        } catch (AuthenticationException $exception) {
+            try {
+                $this->logout($session);
+            } catch (\Throwable) {
+            }
+            throw $exception;
+        }
     }
 
     public function status(string $accessToken): array
@@ -266,6 +305,10 @@ final class Sso implements Contracts\BrokerClient
         }
         $this->assertNotLoggedOut($identity);
         $context = BootstrapContext::fromArray($identity['context'], config('university-sso.client_id'), $identity['issuer'], $identity['sub']);
+        if ($context->isExpired()) {
+            $context = $this->refreshContext($session);
+            $identity = $session->get('sso.identity');
+        }
         $status = $this->status($identity['access_token']);
         if (! is_bool($status['active'] ?? null) || ! is_string($status['university_id'] ?? null) || ! is_int($status['session_epoch'] ?? null) || ! is_int($status['authorization_version'] ?? null)) {
             throw new UpstreamException('Malformed status response.');

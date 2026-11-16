@@ -28,6 +28,9 @@ final class TokenValidator implements AccessTokenValidator
     {
         try {
             $claims = $this->decode($jwt, $keys);
+            if (! $logout && (array_key_exists('events', $claims) || in_array($claims['typ'] ?? null, ['Bearer', 'Refresh', 'access_token', 'refresh_token'], true))) {
+                throw new ProtocolException('Token profile is not an ID token.');
+            }
             $aud = $claims['aud'] ?? [];
             $aud = is_string($aud) ? [$aud] : $aud;
             if (($claims['iss'] ?? null) !== $issuer || ! is_array($aud) || ! in_array($client, $aud, true) || (! $logout && ! is_int($claims['exp'] ?? null)) || (array_key_exists('exp', $claims) && (! is_int($claims['exp']) || $claims['exp'] <= time())) || ! is_int($claims['iat'] ?? null) || $claims['iat'] > time()) {
@@ -61,6 +64,10 @@ final class TokenValidator implements AccessTokenValidator
         // Only RSA SHA-256 keys are accepted; never infer an algorithm from a token.
         $filtered = array_values(array_filter($keys['keys'] ?? [], static fn ($key) => is_array($key) && ($key['kty'] ?? '') === 'RSA' && ($key['alg'] ?? 'RS256') === 'RS256' && ($key['use'] ?? 'sig') === 'sig'));
         $claims = (array) JWT::decode($jwt, JWK::parseKeySet(['keys' => $filtered], 'RS256'));
+        // Do not inherit another library consumer's global JWT leeway/timestamp policy.
+        if (array_key_exists('nbf', $claims) && (! is_int($claims['nbf']) || $claims['nbf'] > time())) {
+            throw new \UnexpectedValueException('Token is not valid yet.');
+        }
 
         return $claims;
     }

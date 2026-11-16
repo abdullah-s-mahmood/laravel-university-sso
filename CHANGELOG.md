@@ -2,6 +2,9 @@
 
 ## Unreleased — development branch
 
+- Reject ID-token profile confusion and future nbf despite ambient JWT-library leeway.
+- Renew expired Broker context snapshots without issuing another provider token grant.
+- Persist backchannel invalidation before registry notification; scope replay keys per client.
 - Add opt-in rotating refresh credentials, encrypted in server-side JSON sessions.
 - Add fresh-ID validation, identity/session binding and replay suppression.
 - Rotate local session IDs on refresh; emit token-free refreshed/refresh_failed events.

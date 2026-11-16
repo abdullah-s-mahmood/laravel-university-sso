@@ -45,5 +45,14 @@ No scan suppression, severity downgrade, ignore-unfixed or waiver was introduced
 
 Remaining before stable: container finding remediation and re-scan, independent
 security review of lifecycle/refresh, release/upgrade acceptance and
-owner approval of package publication/versioning. No stable tag or Packagist
+publication/versioning verification. Publication is already authorized by the task; no additional approval is inferred. No stable tag or Packagist
 ownership claim. Parent controls PR publication and merges; main is protected.
+
+
+## Additional lifecycle hardening — local verification 2026-11-17
+
+45 tests / 144 assertions passed on PHP 8.4 / Laravel 13, with Pint and PHPStan
+passing. Added ID-token profile and nbf separation, bounded Broker-context expiry
+renewal, client-scoped backchannel replay keys and persistence failure handling.
+These changes require fresh hosted matrix/Keycloak execution; earlier hosted
+runs do not cover this revision. Existing container findings remain unresolved.
