@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace UniversitySso\Tests;
 
+use Firebase\JWT\ExpiredException;
 use Firebase\JWT\JWT;
+use Firebase\JWT\SignatureInvalidException;
 use Illuminate\Http\Client\Factory;
 use Illuminate\Session\ArraySessionHandler;
 use Illuminate\Session\Store;
@@ -354,6 +356,35 @@ final class ProtocolTest extends TestCase
             self::fail();
         } catch (UpstreamException) {
             self::assertNull($session->get('sso.identity'));
+        }
+    }
+
+    public function test_access_failures_preserve_cause_and_scope_jwks_refresh(): void
+    {
+        [$pem,$keys] = $this->signing();
+        [$rotatedPem] = $this->signing();
+        $claims = array_merge($this->claims(), ['aud' => 'broker', 'azp' => 'demo', 'typ' => 'Bearer']);
+        unset($claims['nonce']);
+        $validator = new TokenValidator;
+        foreach ([
+            [JWT::encode($claims, $pem, 'RS256', 'rotated'), true, \UnexpectedValueException::class],
+            [JWT::encode($claims, $rotatedPem, 'RS256', 'test'), true, SignatureInvalidException::class],
+            [JWT::encode(array_merge($claims, ['iss' => 'https://wrong.invalid']), $pem, 'RS256', 'test'), false, null],
+            [JWT::encode(array_merge($claims, ['exp' => time() - 10]), $pem, 'RS256', 'test'), false, ExpiredException::class],
+            ['malformed', false, \UnexpectedValueException::class],
+            [JWT::encode($claims, $pem, 'RS256'), false, \UnexpectedValueException::class],
+        ] as [$token,$refresh,$cause]) {
+            try {
+                $validator->validateAccessToken($token, $keys, 'https://id.example.invalid', 'broker', ['demo']);
+                self::fail();
+            } catch (AuthenticationException $exception) {
+                self::assertSame($refresh, $exception->shouldRefreshJwks());
+                if ($cause !== null) {
+                    self::assertInstanceOf($cause, $exception->getPrevious());
+                } else {
+                    self::assertNull($exception->getPrevious());
+                }
+            }
         }
     }
 }
