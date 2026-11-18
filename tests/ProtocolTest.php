@@ -829,4 +829,40 @@ final class ProtocolTest extends TestCase
             self::assertNull($session->get('sso.identity'));
         }
     }
+
+    public function test_context_fingerprint_roundtrips_and_rejects_malformed_contracts(): void
+    {
+        $data = $this->bootstrap();
+        $data['security']['context_fingerprint'] = hash('sha256', 'synthetic-selected-context');
+        $context = BootstrapContext::fromArray($data, 'demo');
+        self::assertSame($data['security']['context_fingerprint'], $context->fingerprint());
+        self::assertSame($context->fingerprint(), BootstrapContext::fromArray(json_decode(json_encode($context->toArray()), true), 'demo')->fingerprint());
+        $data['security']['context_fingerprint'] = 'untrusted';
+        $this->expectException(UpstreamException::class);
+        BootstrapContext::fromArray($data, 'demo');
+    }
+
+    public function test_live_context_fingerprint_change_denies_old_permissions_without_an_epoch_change(): void
+    {
+        $this->app['router']->get('/context-change', fn () => response('unsafe'))->middleware(['web', 'university.session-valid']);
+        $identity = $this->expiredContextIdentity();
+        unset($identity['context']['security']['context_expires_at']);
+        $identity['context']['security']['context_fingerprint'] = hash('sha256', 'synthetic-original');
+        $status = ['active' => true, 'university_id' => 'person-demo', 'session_epoch' => 1, 'authorization_version' => 2,
+            'context_fingerprint' => $identity['context']['security']['context_fingerprint']];
+        Http::fake(['*/status' => Http::sequence()->push($status)->push(array_replace($status, ['context_fingerprint' => hash('sha256', 'synthetic-other-context')]))]);
+        $this->withSession(['sso.identity' => $identity])->getJson('/context-change')->assertOk();
+        $this->getJson('/context-change')->assertStatus(401);
+    }
+
+    public function test_missing_required_live_fingerprint_fails_closed_as_unavailable(): void
+    {
+        $this->app['router']->get('/missing-context-proof', fn () => response('unsafe'))->middleware(['web', 'university.session-valid']);
+        $identity = $this->expiredContextIdentity();
+        unset($identity['context']['security']['context_expires_at']);
+        $identity['context']['security']['context_fingerprint'] = hash('sha256', 'synthetic-original');
+        Http::fake(['*/status' => Http::response(['active' => true, 'university_id' => 'person-demo', 'session_epoch' => 1, 'authorization_version' => 2])]);
+        $this->withSession(['sso.identity' => $identity])->getJson('/missing-context-proof')->assertStatus(503);
+        self::assertSame($identity, session('sso.identity'));
+    }
 }

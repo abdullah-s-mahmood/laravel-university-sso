@@ -2,6 +2,7 @@
 
 ## Unreleased — development branch
 
+- Bind cached context permissions to an optional live Broker context fingerprint.
 - Reject ID-token profile confusion and future nbf despite ambient JWT-library leeway.
 - Renew expired Broker context snapshots without issuing another provider token grant.
 - Persist backchannel invalidation before registry notification; scope replay keys per client.

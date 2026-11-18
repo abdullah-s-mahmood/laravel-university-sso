@@ -56,3 +56,12 @@ passing. Added ID-token profile and nbf separation, bounded Broker-context expir
 renewal, client-scoped backchannel replay keys and persistence failure handling.
 These changes require fresh hosted matrix/Keycloak execution; earlier hosted
 runs do not cover this revision. Existing container findings remain unresolved.
+
+
+## Optional live context proof — local verification 2026-11-18
+
+48 tests / 151 assertions, Pint and PHPStan passed. A Broker-supplied context
+fingerprint is retained through JSON sessions and checked on each protected
+status call and context renewal. Changed proofs reject stale context rights;
+missing required proofs fail closed as unavailable. No fixed institutional
+endpoint, role or context policy is introduced. Fresh hosted checks are pending.

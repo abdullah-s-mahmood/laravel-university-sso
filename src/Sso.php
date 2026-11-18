@@ -255,8 +255,22 @@ final class Sso implements Contracts\BrokerClient
         if ($context->id !== $old->id || $context->epoch !== $old->epoch || $context->authorizationVersion !== $old->authorizationVersion) {
             throw new AuthenticationException('Session authorization changed; authenticate again.');
         }
+        $this->assertContextFingerprint($old, $context->fingerprint());
         if ($old->expiresAt() !== null && $context->expiresAt() === null) {
             throw new UpstreamException('Broker omitted the required context expiry.');
+        }
+    }
+
+    private function assertContextFingerprint(BootstrapContext $context, mixed $fingerprint): void
+    {
+        if ($context->fingerprint() === null) {
+            return;
+        }
+        if (! is_string($fingerprint) || ! preg_match('/^[a-f0-9]{64}$/D', $fingerprint)) {
+            throw new UpstreamException('Broker omitted the required context fingerprint.');
+        }
+        if (! hash_equals($context->fingerprint(), $fingerprint)) {
+            throw new AuthenticationException('Session authorization context changed.');
         }
     }
 
@@ -316,6 +330,8 @@ final class Sso implements Contracts\BrokerClient
         if ($status['active'] !== true || $status['university_id'] !== $context->id || $status['session_epoch'] !== $context->epoch || $status['authorization_version'] !== $context->authorizationVersion) {
             throw new ProtocolException('Session revoked.');
         }
+
+        $this->assertContextFingerprint($context, $status['context_fingerprint'] ?? null);
 
         return $context;
     }

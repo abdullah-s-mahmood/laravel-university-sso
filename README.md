@@ -84,3 +84,12 @@ Backchannel lifecycle listeners receive a deterministic `event_reference` and
 `occurred_at`; consumers should deduplicate registry work using that reference.
 The local invalidation marker is written before the listener runs. A listener or
 cache failure returns an unavailable error and permits a safe delivery retry.
+
+
+A Broker can bind the selected context and its current grants with
+`security.context_fingerprint` (64 lowercase hexadecimal characters). The status
+endpoint must return the same value as `context_fingerprint`. Once supplied, the
+SDK requires this proof on every protected check: a changed fingerprint rejects
+the old session context; a missing or malformed proof fails closed as unavailable.
+This also covers context switches or time-dependent grant changes without an
+epoch change. Legacy Brokers that omit the optional field remain compatible.

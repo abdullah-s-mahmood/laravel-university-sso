@@ -42,6 +42,10 @@ final readonly class BootstrapContext implements Contracts\IdentityContext
                 throw new UpstreamException('Invalid context.');
             }
         }
+        if (array_key_exists('context_fingerprint', $data['security'])
+            && (! is_string($data['security']['context_fingerprint']) || ! preg_match('/^[a-f0-9]{64}$/D', $data['security']['context_fingerprint']))) {
+            throw new UpstreamException('Invalid context fingerprint.');
+        }
         $expiry = null;
         if (array_key_exists('context_expires_at', $data['security'])) {
             $value = $data['security']['context_expires_at'];
@@ -63,7 +67,7 @@ final readonly class BootstrapContext implements Contracts\IdentityContext
             'authenticated' => true,
             'user' => array_intersect_key($data['user'], array_flip(['university_id', 'type', 'status', 'full_name'])),
             'application' => array_intersect_key($data['application'], array_flip(['client_id', 'allowed', 'roles', 'permissions'])),
-            'security' => array_intersect_key($data['security'], array_flip(['session_epoch', 'authorization_version', 'context_expires_at'])),
+            'security' => array_intersect_key($data['security'], array_flip(['session_epoch', 'authorization_version', 'context_expires_at', 'context_fingerprint'])),
             'active_context' => $data['active_context'] ?? null,
             'applications' => $data['applications'] ?? [],
         ];
@@ -72,6 +76,11 @@ final readonly class BootstrapContext implements Contracts\IdentityContext
         }
 
         return new self($data['user']['university_id'], $data['security']['session_epoch'], $data['security']['authorization_version'], $data['application']['permissions'], $safe, $expiry);
+    }
+
+    public function fingerprint(): ?string
+    {
+        return $this->data['security']['context_fingerprint'] ?? null;
     }
 
     public function expiresAt(): ?int
