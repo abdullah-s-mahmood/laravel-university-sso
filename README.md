@@ -54,3 +54,42 @@ CI covers Laravel 12/Testbench 10 and Laravel 13/Testbench 11 with PHP 8.4.
 
 Real-provider harness (with fake Broker): [instructions](tests/Integration/README.md).
 Run php tools/sbom.php for a CycloneDX inventory of locked dependencies.
+
+## Refresh, examples and development installation
+
+Refresh stays disabled for existing consumers. See [upgrade guide](docs/UPGRADING.md)
+before setting SSO_REFRESH_ENABLED=true: rotating provider policy, server-side
+JSON sessions, shared atomic cache and route session blocking are required.
+The API is Sso::refresh($request->session()): BootstrapContext. Resource decisions
+still require authoritative state and consumer policy.
+
+Copy [controller/routes/Blade examples](examples/laravel/) into an independent
+Laravel app and adapt route names. [Environment example](.env.example) contains
+no credentials. Never place tokens in frontend storage or application URLs.
+
+Until a reviewed release and Packagist ownership exist, a Composer VCS repository
+can point to https://github.com/abdullah-s-mahmood/laravel-university-sso and require
+university-sso/laravel-university-sso at a reviewed dev-main commit. Keep the consumer
+lockfile. No stable release has been published. See [changelog](CHANGELOG.md)
+and [mandatory checklist](docs/SDK_CHECKLIST.md).
+
+
+When a Broker supplies `security.context_expires_at` (an RFC 3339 timestamp), the
+SDK renews the expired snapshot using the existing access token before authorizing
+an action. Renewal must retain identity, epoch and authorization version; outages
+fail closed without granting the action. Token refresh and context renewal are
+separate operations. A Broker that starts sending an expiry must keep sending it.
+
+Backchannel lifecycle listeners receive a deterministic `event_reference` and
+`occurred_at`; consumers should deduplicate registry work using that reference.
+The local invalidation marker is written before the listener runs. A listener or
+cache failure returns an unavailable error and permits a safe delivery retry.
+
+
+A Broker can bind the selected context and its current grants with
+`security.context_fingerprint` (64 lowercase hexadecimal characters). The status
+endpoint must return the same value as `context_fingerprint`. Once supplied, the
+SDK requires this proof on every protected check: a changed fingerprint rejects
+the old session context; a missing or malformed proof fails closed as unavailable.
+This also covers context switches or time-dependent grant changes without an
+epoch change. Legacy Brokers that omit the optional field remain compatible.

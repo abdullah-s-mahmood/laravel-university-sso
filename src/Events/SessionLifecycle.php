@@ -13,7 +13,7 @@ final readonly class SessionLifecycle
     {
         $this->identity = array_intersect_key($identity, array_flip([
             'issuer', 'client_id', 'subject', 'sid', 'session_reference',
-            'university_id', 'session_epoch', 'authorization_version', 'expires_at',
+            'event_reference', 'occurred_at', 'previous_session_reference', 'university_id', 'session_epoch', 'authorization_version', 'expires_at',
         ]));
     }
 }

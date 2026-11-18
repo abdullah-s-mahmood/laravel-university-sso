@@ -18,19 +18,31 @@ final class BackchannelLogout
         $sso = app(Sso::class);
         $metadata = $sso->metadata();
         $claims = (new TokenValidator)->validate($token, Http::get($metadata['jwks_uri']), config('university-sso.issuer'), config('university-sso.client_id'), logout: true);
-        $replay = self::key($claims['iss'], 'jti', $claims['jti']);
+        $eventReference = hash('sha256', json_encode([$claims['iss'], config('university-sso.client_id'), $claims['jti']], JSON_THROW_ON_ERROR));
+        $replay = self::key($claims['iss'], 'jti', $eventReference);
         $kind = isset($claims['sid']) ? 'sid' : 'sub';
         $key = self::key($claims['iss'], $kind, $claims[$kind]);
-        Cache::lock($key.':lock', 10)->block(3, function () use ($key, $claims, $replay): void {
-            if (Cache::has($replay)) {
-                return;
-            }
-            Cache::put($key, max((int) Cache::get($key, 0), $claims['iat']), (int) config('university-sso.logout_retention', 86400));
-            event(new Events\SessionLifecycle('backchannel_logout', [
-                'issuer' => $claims['iss'], 'client_id' => config('university-sso.client_id'),
-                'subject' => $claims['sub'] ?? null, 'sid' => $claims['sid'] ?? null,
-            ]));
-            Cache::put($replay, true, 600);
-        });
+        try {
+            Cache::lock($key.':lock', 10)->block(3, function () use ($key, $claims, $replay, $eventReference): void {
+                if (Cache::has($replay)) {
+                    return;
+                }
+                if (! Cache::put($key, max((int) Cache::get($key, 0), $claims['iat']), (int) config('university-sso.logout_retention', 86400))) {
+                    throw new UpstreamException('Logout marker could not be persisted.');
+                }
+                event(new Events\SessionLifecycle('backchannel_logout', [
+                    'issuer' => $claims['iss'], 'client_id' => config('university-sso.client_id'),
+                    'subject' => $claims['sub'] ?? null, 'sid' => $claims['sid'] ?? null,
+                    'event_reference' => $eventReference, 'occurred_at' => $claims['iat'],
+                ]));
+                if (! Cache::put($replay, true, 600)) {
+                    throw new UpstreamException('Logout replay marker could not be persisted.');
+                }
+            });
+        } catch (UpstreamException $exception) {
+            throw $exception;
+        } catch (\Throwable) {
+            throw new UpstreamException('Logout persistence or registry unavailable.');
+        }
     }
 }

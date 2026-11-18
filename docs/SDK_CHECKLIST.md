@@ -1,27 +1,27 @@
 # Mandatory library checklist audit
 
-Baseline evidence: hosted run 43781772392 at 765a7e2, all four jobs passed.
-No stable release is declared. This audit distinguishes implemented code from
-actual provider interoperability.
+No stable release is declared. Implemented code and actual-provider evidence
+are separate. Hosted runs 43781772392 and 43782693712 establish scoped baselines;
+43820813588 adds successful refresh and PHP 8.5 evidence.
 
-| Requirement | Baseline state / remaining work |
+| Requirement | Current evidence / remaining acceptance |
 | --- | --- |
-| Generic config, Composer MIT, provider/discovery/PKCE | Implemented; actual confidential web and public native provider tests passed |
-| Trusted cryptographic JWT validation | firebase/php-jwt; RS256/claims; reusable access contract; independent security review still required |
-| DTO surface, bootstrap once | Implemented; per-session arrays isolated by application and identity; no cross-user positive context cache |
-| UniversityIdentity facade name | Sso facade exists; compatibility alias still needed |
-| auth/permission/session-valid middleware | Implemented and tested; resource hook performs fresh status check |
-| context middleware | Missing in baseline; implement freshness plus explicit active context restriction |
-| 401/403/503 and revocation | Tested with fake broker; production broker policies remain external |
-| Global logout/backchannel | Code and signed unit fixtures exist; actual-provider delivery not yet tested |
-| Session registry integration | No lifecycle integration hook in baseline |
-| Refresh-token rotation | Missing; do not claim implemented |
-| JWKS signing-key rotation | Fresh JWKS retrieval exists; dedicated regression evidence still needed |
-| Independent installation | Composer lock + Laravel HTTP example and hosted smoke pass |
-| Matrix/static/style/dependency audit | Laravel 12/13 on PHP 8.4 pass; broader supported PHP versions not yet tested |
-| Security/license/SBOM | MIT, dependency inventory and audit exist; automated secret scan/container scan and uploaded SBOM still need CI completion |
-| Documentation/examples | English/Arabic and architecture/security/contracts exist; changelog, upgrade guide, env/controller/Blade examples missing |
-| SemVer/tags/releases | Deferred until all mandatory library acceptance passes; Packagist ownership unverified |
+| Generic config, Composer MIT, provider/discovery/PKCE | Actual confidential separate-host web and public native code flows passed |
+| Trusted cryptographic verification | firebase/php-jwt; strict RS256/claims; reusable access contract; independent review still required |
+| DTO surface / single bootstrap | Implemented; identity/client/version-bound session snapshot; new bootstrap only after authentication or refresh |
+| UniversityIdentity facade | Implemented explicit facade and auto-discovered alias |
+| auth/permission/context/session-valid | Implemented and tested; context/permission guards require fresh session middleware |
+| Resource policy hooks | hasPermission checks authoritative state and optional resource policy |
+| 401/403/503 / revocation | Fake-broker regressions pass; production policies remain external |
+| RP logout / signed backchannel | Actual provider delivery passed run 43782693712; duplicate/out-of-order unit tests pass |
+| Session registry | Token-free lifecycle integration hooks; actual fake-consumer listener delivery passed for refresh; production registry adapter remains consumer-owned |
+| Refresh rotation | Implemented opt-in, encrypted credentials, atomic one-use marker, same-identity and epoch/version checks; actual provider refresh/native replay passed run 43820813588 |
+| JWKS rotation | Fresh fetch + narrowly typed refresh signal; caller owns bounded cache; regression tests cover signature/unknown-kid distinction |
+| Independent consumer | Composer locks, actual standalone Laravel consumer in hosted tests; controller/routes/Blade/env examples now included |
+| Matrix/static/style | Laravel 12/13 on PHP 8.4 validated; PHP 8.5 jobs passed run 43820813588 |
+| Security/license/SBOM | MIT and permissive dependency options checked; Gitleaks source scan clean; hosted secret/dependency/license/SBOM jobs passed; container scan failed six HIGH findings (see report) |
+| Documentation | English/Arabic, architecture/security/contracts, changelog, upgrade guide and environment/examples supplied |
+| SemVer/tags/Packagist | Deferred until all mandatory acceptance and owner review; vendor ownership unverified |
 
-This package never owns personnel logic, production broker migrations, IdP
-administrator credentials, institution configuration or production Gate UI.
+No institution-specific domain logic, personnel data, IdP administrator credentials
+or production infrastructure configuration belongs in the package.

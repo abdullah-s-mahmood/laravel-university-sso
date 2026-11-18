@@ -8,8 +8,10 @@ use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Route;
 use UniversitySso\BackchannelLogout;
+use UniversitySso\Events\SessionLifecycle;
 use UniversitySso\ProtocolException;
 use UniversitySso\Sso;
 use UniversitySso\SsoServiceProvider;
@@ -65,6 +67,18 @@ $app = Application::configure(basePath: $runtime)
 
                 return redirect('/');
             });
+            Route::get('/refresh-form', fn () => response('<form method="POST" action="/refresh">'.csrf_field().'<button>Refresh session</button></form>'));
+            Route::post('/refresh', function (Request $request, Sso $sso) {
+                $sso->refresh($request->session());
+
+                return redirect('/account');
+            })->block();
+            Route::get('/lifecycle-operations', function () {
+                $path = getenv('CONSUMER_RUNTIME').'/lifecycle.jsonl';
+                $lines = is_file($path) ? file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) : [];
+
+                return response()->json(array_map(static fn ($line) => json_decode($line, true, 512, JSON_THROW_ON_ERROR)['operation'], $lines));
+            })->middleware('university.session-valid');
             Route::get('/global-logout-form', fn () => response('<form method="POST" action="/global-logout">'.csrf_field().'<button>Global logout</button></form>'));
             Route::post('/global-logout', fn (Request $request, Sso $sso) => redirect()->away($sso->logoutUrl($request->session())));
         });
@@ -85,5 +99,10 @@ config([
     'university-sso.post_logout_redirect_uri' => getenv('CONSUMER_ORIGIN').'/',
     'university-sso.broker_url' => 'https://localhost:3443',
     'university-sso.require_identity_binding' => true,
+    'university-sso.refresh.enabled' => true,
 ]);
+// Test consumer registry adapter: persist only the already-token-free lifecycle payload.
+Event::listen(SessionLifecycle::class, function ($event) use ($runtime): void {
+    file_put_contents($runtime.'/lifecycle.jsonl', json_encode(['operation' => $event->operation, 'identity' => $event->identity], JSON_THROW_ON_ERROR)."\n", FILE_APPEND | LOCK_EX);
+});
 $app->handleRequest(Request::capture());

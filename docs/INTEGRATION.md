@@ -109,7 +109,8 @@ Use shared durable cache with atomic locks. Markers are locked during update;
 logout_retention (default 86400 seconds) must exceed maximum local session lifetime.
 Duplicate logout delivery is idempotent. The central status check remains authority.
 
-No refresh-token persistence/renewal or automatic local User provisioning is supplied.
+Automatic local User provisioning is not supplied. Opt-in rotating refresh is
+now available; see docs/UPGRADING.md before enabling it.
 
 Permission/role middleware MUST follow university.session-valid on the same request.
 Running permission middleware alone returns 401 even if a context snapshot exists
@@ -144,3 +145,13 @@ stored. Local logout always destroys the session, including when a listener fail
 Backchannel markers remain authoritative even if a listener fails; delivery may
 retry, so consumers must make listeners idempotent. These are integration hooks,
 not proof of a production registry implementation.
+
+## Refresh API
+
+Sso::refresh(Session): BootstrapContext performs a single rotating refresh grant.
+Configuration refresh.enabled defaults false; refresh.before_expiry defaults 30
+seconds and refresh.replay_retention defaults 86400 seconds. The existing session
+guard refreshes proactively only when enabled and provider expires_in is known.
+Session-block refreshing routes. New credentials are encrypted with Laravel Crypt.
+Use refreshed/refresh_failed registry operations as described in docs/UPGRADING.md.
+No broker implementation or private token-decoding function is duplicated.

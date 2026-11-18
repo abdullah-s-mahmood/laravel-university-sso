@@ -24,6 +24,7 @@ clients.append({
 realm = {
     'realm': 'sdk-test', 'enabled': True, 'sslRequired': 'all',
     'registrationAllowed': False, 'defaultSignatureAlgorithm': 'RS256',
+    'revokeRefreshToken': True, 'refreshTokenMaxReuse': 0,
     'clients': clients,
     'users': [{
         'username': os.environ['OIDC_TEST_USERNAME'], 'enabled': True,

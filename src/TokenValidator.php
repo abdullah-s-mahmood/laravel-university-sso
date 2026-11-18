@@ -11,8 +11,26 @@ final class TokenValidator implements AccessTokenValidator
 {
     public function validate(string $jwt, array $keys, string $issuer, string $client, ?string $nonce = null, bool $logout = false): array
     {
+        return $this->verifyIdentity($jwt, $keys, $issuer, $client, $nonce, $logout);
+    }
+
+    public function validateRefreshedIdToken(string $jwt, array $keys, string $issuer, string $client, string $subject, ?string $originalNonce): array
+    {
+        $claims = $this->verifyIdentity($jwt, $keys, $issuer, $client, $originalNonce, false, true);
+        if ($claims['sub'] !== $subject) {
+            throw new AuthenticationException('Refreshed subject mismatch.');
+        }
+
+        return $claims;
+    }
+
+    private function verifyIdentity(string $jwt, array $keys, string $issuer, string $client, ?string $nonce, bool $logout, bool $allowMissingNonce = false): array
+    {
         try {
             $claims = $this->decode($jwt, $keys);
+            if (! $logout && (array_key_exists('events', $claims) || in_array($claims['typ'] ?? null, ['Bearer', 'Refresh', 'access_token', 'refresh_token'], true))) {
+                throw new ProtocolException('Token profile is not an ID token.');
+            }
             $aud = $claims['aud'] ?? [];
             $aud = is_string($aud) ? [$aud] : $aud;
             if (($claims['iss'] ?? null) !== $issuer || ! is_array($aud) || ! in_array($client, $aud, true) || (! $logout && ! is_int($claims['exp'] ?? null)) || (array_key_exists('exp', $claims) && (! is_int($claims['exp']) || $claims['exp'] <= time())) || ! is_int($claims['iat'] ?? null) || $claims['iat'] > time()) {
@@ -29,7 +47,9 @@ final class TokenValidator implements AccessTokenValidator
                 if (! is_object($claims['events'] ?? null) || ! is_object($events['http://schemas.openid.net/event/backchannel-logout'] ?? null) || array_key_exists('nonce', $claims) || ! is_string($claims['jti'] ?? null) || $claims['jti'] === '' || (array_key_exists('sid', $claims) && (! is_string($claims['sid']) || $claims['sid'] === '')) || (array_key_exists('sub', $claims) && (! is_string($claims['sub']) || $claims['sub'] === '')) || ((! is_string($claims['sid'] ?? null) || $claims['sid'] === '') && (! is_string($claims['sub'] ?? null) || $claims['sub'] === '')) || $claims['iat'] < time() - 300) {
                     throw new ProtocolException('Invalid logout token.');
                 }
-            } elseif (! is_string($claims['sub'] ?? null) || $claims['sub'] === '' || $nonce === null || ! is_string($claims['nonce'] ?? null) || ! hash_equals($nonce, $claims['nonce'])) {
+            } elseif (! is_string($claims['sub'] ?? null) || $claims['sub'] === ''
+                || (! $allowMissingNonce && ! array_key_exists('nonce', $claims))
+                || (array_key_exists('nonce', $claims) && ($nonce === null || ! is_string($claims['nonce']) || ! hash_equals($nonce, $claims['nonce'])))) {
                 throw new ProtocolException('Invalid identity or nonce.');
             }
 
@@ -44,6 +64,10 @@ final class TokenValidator implements AccessTokenValidator
         // Only RSA SHA-256 keys are accepted; never infer an algorithm from a token.
         $filtered = array_values(array_filter($keys['keys'] ?? [], static fn ($key) => is_array($key) && ($key['kty'] ?? '') === 'RSA' && ($key['alg'] ?? 'RS256') === 'RS256' && ($key['use'] ?? 'sig') === 'sig'));
         $claims = (array) JWT::decode($jwt, JWK::parseKeySet(['keys' => $filtered], 'RS256'));
+        // Do not inherit another library consumer's global JWT leeway/timestamp policy.
+        if (array_key_exists('nbf', $claims) && (! is_int($claims['nbf']) || $claims['nbf'] > time())) {
+            throw new \UnexpectedValueException('Token is not valid yet.');
+        }
 
         return $claims;
     }

@@ -27,3 +27,10 @@ JWKS; retrieval/caching belongs to the broker caller.
 
 No database migrations, UI framework, identity-provider admin credentials,
 personnel models or private institution configuration are part of this library.
+
+Optional renewal: claim a refresh fingerprint atomically -> one provider POST ->
+verify any renewed ID token and unchanged identity/session -> one broker bootstrap
+with unchanged epoch/version -> recheck backchannel markers -> rotate encrypted
+credentials and local session ID -> notify the consumer registry hook.
+No token POST is retried. A possibly consumed credential is never reused after
+a failed/ambiguous result. Existing applications retain refresh-disabled behavior.
